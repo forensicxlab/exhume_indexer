@@ -1,0 +1,1526 @@
+artifacts:
+  - name: "System Logs – Syslog/Kern/Daemon"
+    description: "Core syslog-based log files capturing kernel, daemon and general system messages (Debian/Ubuntu & RHEL/Fedora paths)"
+    paths:
+      - "/var/log/syslog"
+      - "/var/log/messages"
+      - "/var/log/kern.log"
+      - "/var/log/daemon.log"
+    parser: "syslog"
+    tag: "logs"
+    category: "system"
+
+  - name: "Systemd Journal"
+    description: "Binary journal files produced by systemd-journald"
+    paths:
+      - "/var/log/journal"
+      - "/run/log/journal"
+    parser: "systemd_journal"
+    tag: "logs"
+    category: "system"
+
+  - name: "Kernel Ring Buffer (dmesg)"
+    description: "Boot-time and runtime kernel messages captured by dmesg"
+    paths:
+      - "/var/log/dmesg"
+    parser: "kernel_ring_buffer"
+    tag: "logs"
+    category: "system"
+
+  - name: "Boot Log"
+    description: "Boot process messages"
+    paths:
+      - "/var/log/boot.log"
+    parser: "bootlog"
+    tag: "logs"
+    category: "system"
+
+  - name: "Grub Configuration"
+    description: "GRUB bootloader configuration"
+    paths:
+      - "/boot/grub/grub.cfg"
+      - "/boot/grub2/grub.cfg"
+    parser: "grub_cfg"
+    tag: "boot"
+    category: "system"
+
+  - name: "Fstab"
+    description: "Static filesystem mount definitions"
+    paths:
+      - "/etc/fstab"
+    parser: "fstab"
+    tag: "config"
+    category: "system"
+
+  - name: "Mounted Filesystems"
+    description: "Snapshot of current mounts"
+    paths:
+      - "/proc/mounts"
+    parser: "mounts"
+    tag: "state"
+    category: "system"
+
+  - name: "DPKG Log"
+    description: "Package operations performed with dpkg"
+    paths:
+      - "/var/log/dpkg.log"
+    parser: "dpkg_log"
+    tag: "packages"
+    category: "system"
+
+  - name: "APT History Log"
+    description: "Transactions carried out with apt/apt-get"
+    paths:
+      - "/var/log/apt/history.log"
+      - "/var/log/apt/term.log"
+    parser: "apt_history"
+    tag: "packages"
+    category: "system"
+
+  - name: "YUM Log"
+    description: "Package-manager transactions on RHEL-based systems"
+    paths:
+      - "/var/log/yum.log"
+    parser: "yum_log"
+    tag: "packages"
+    category: "system"
+
+  - name: "DNF Log"
+    description: "Package-manager transactions on modern Fedora/RHEL systems"
+    paths:
+      - "/var/log/dnf.log"
+    parser: "dnf_log"
+    tag: "packages"
+    category: "system"
+
+  - name: "Pacman Log"
+    description: "Arch-based package-manager transactions"
+    paths:
+      - "/var/log/pacman.log"
+    parser: "pacman_log"
+    tag: "packages"
+    category: "system"
+
+  - name: "UFW Firewall Log"
+    description: "Ubuntu Uncomplicated Firewall events"
+    paths:
+      - "/var/log/ufw.log"
+    parser: "ufw_log"
+    tag: "logs"
+    category: "network"
+
+  - name: "SSH Server Configuration"
+    description: "OpenSSH daemon configuration"
+    paths:
+      - "/etc/ssh/sshd_config"
+    parser: "ssh_config"
+    tag: "config"
+    category: "network"
+
+  - name: "SSH Client Configuration"
+    description: "System-wide OpenSSH client configuration"
+    paths:
+      - "/etc/ssh/ssh_config"
+    parser: "ssh_config"
+    tag: "config"
+    category: "network"
+
+  - name: "SSH Known Hosts (System-wide)"
+    description: "Known host fingerprints for automated trust decisions"
+    paths:
+      - "/etc/ssh/ssh_known_hosts"
+    parser: "ssh_known_hosts"
+    tag: "config"
+    category: "network"
+
+  - name: "Resolver Configuration"
+    description: "DNS resolver settings"
+    paths:
+      - "/etc/resolv.conf"
+    parser: "resolv_conf"
+    tag: "config"
+    category: "network"
+
+  - name: "Hosts File"
+    description: "Static hostname mappings"
+    paths:
+      - "/etc/hosts"
+    parser: "hosts_file"
+    tag: "config"
+    category: "network"
+
+  - name: "Network Interfaces (Debian-style)"
+    description: "Legacy Debian network-interfaces configuration"
+    paths:
+      - "/etc/network/interfaces"
+    parser: "interfaces_file"
+    tag: "config"
+    category: "network"
+
+  - name: "Network Interfaces (Red Hat-style)"
+    description: "Red Hat network-scripts interface configuration"
+    paths:
+      - "/etc/sysconfig/network-scripts/ifcfg-eth0"
+    parser: "interfaces_file"
+    tag: "config"
+    category: "network"
+
+  - name: "Netplan Configuration"
+    description: "Modern Ubuntu network configuration"
+    paths:
+      - "/etc/netplan"
+    parser: "netplan_yaml"
+    tag: "config"
+    category: "network"
+
+  - name: "Passwd File"
+    description: "Local user-account definitions"
+    paths:
+      - "/etc/passwd"
+    parser: "passwd"
+    tag: "accounts"
+    category: "users"
+
+  - name: "Shadow File"
+    description: "Password hashes and aging information"
+    paths:
+      - "/etc/shadow"
+    parser: "shadow"
+    tag: "accounts"
+    category: "users"
+
+  - name: "Group File"
+    description: "Local group definitions"
+    paths:
+      - "/etc/group"
+    parser: "group"
+    tag: "accounts"
+    category: "users"
+
+  - name: "GShadow File"
+    description: "Secure group-membership information"
+    paths:
+      - "/etc/gshadow"
+    parser: "gshadow"
+    tag: "accounts"
+    category: "users"
+
+  - name: "Sudoers File"
+    description: "Privilege-escalation configuration"
+    paths:
+      - "/etc/sudoers"
+    parser: "sudoers"
+    tag: "config"
+    category: "users"
+
+  - name: "Login Records (WTMP/BTMP/UTMP)"
+    description: "Binary records of successful, failed and current logins"
+    paths:
+      - "/var/log/wtmp"
+      - "/var/log/btmp"
+      - "/var/run/utmp"
+    parser: "wtmp_btmp_utmp"
+    tag: "logs"
+    category: "users"
+
+  - name: "Last Log"
+    description: "Binary record of the last login for each user"
+    paths:
+      - "/var/log/lastlog"
+    parser: "lastlog"
+    tag: "logs"
+    category: "users"
+
+  - name: "Root Bash History"
+    description: "Command history for the root account"
+    paths:
+      - "/root/.bash_history"
+    parser: "history_bash"
+    tag: "history"
+    category: "users"
+
+  - name: "Root Zsh History"
+    description: "Z-shell command history for the root account"
+    paths:
+      - "/root/.zsh_history"
+    parser: "history_zsh"
+    tag: "history"
+    category: "users"
+
+  - name: "Cron System Crontab"
+    description: "Primary system-wide scheduled tasks"
+    paths:
+      - "/etc/crontab"
+    parser: "cron_tab"
+    tag: "jobs"
+    category: "system"
+
+  - name: "Apache Access Log (Debian)"
+    description: "Inbound HTTP requests to Apache HTTP Server"
+    paths:
+      - "/var/log/apache2/access.log"
+    parser: "apache_access"
+    tag: "logs"
+    category: "application"
+
+  - name: "Apache Error Log (Debian)"
+    description: "Error messages from Apache HTTP Server"
+    paths:
+      - "/var/log/apache2/error.log"
+    parser: "apache_error"
+    tag: "logs"
+    category: "application"
+
+  - name: "Apache Access Log (RHEL)"
+    description: "Inbound HTTP requests to Apache HTTP Server"
+    paths:
+      - "/etc/httpd/logs/access_log"
+    parser: "apache_access"
+    tag: "logs"
+    category: "application"
+
+  - name: "Apache Error Log (RHEL)"
+    description: "Error messages from Apache HTTP Server"
+    paths:
+      - "/etc/httpd/logs/error_log"
+    parser: "apache_error"
+    tag: "logs"
+    category: "application"
+
+  - name: "NGINX Access Log"
+    description: "Inbound HTTP requests handled by NGINX"
+    paths:
+      - "/var/log/nginx/access.log"
+    parser: "nginx_access"
+    tag: "logs"
+    category: "application"
+
+  - name: "NGINX Error Log"
+    description: "Error messages produced by NGINX"
+    paths:
+      - "/var/log/nginx/error.log"
+    parser: "nginx_error"
+    tag: "logs"
+    category: "application"
+
+  - name: "Docker Container JSON Logs"
+    description: "Default JSON logs emitted by Docker containers"
+    paths:
+      - "/var/lib/docker/containers"
+    parser: "docker_json_log"
+    tag: "logs"
+    category: "application"
+
+  # ---------------- Windows Artifacts ----------------
+
+  - name: "Windows Event Logs – Security/System/Application"
+    description: "Native Windows event channels recording authentication, privilege changes, service start/stop and general OS messages"
+    paths:
+      - '\Windows\System32\winevt\Logs\Security.evtx'
+      - '\Windows\System32\winevt\Logs\System.evtx'
+      - '\Windows\System32\winevt\Logs\Application.evtx'
+    parser: "windows_evtx"
+    tag: "logs"
+    category: "system"
+
+  - name: "Windows Event Logs – DNS Client Operational"
+    description: "Per-host DNS-related activity useful for tracking name resolution on the endpoint"
+    paths:
+      - '\Windows\System32\winevt\Logs\Microsoft-Windows-DNS-Client%4Operational.evtx'
+    parser: "windows_evtx"
+    tag: "network"
+    category: "network"
+
+  - name: "Windows Firewall Log"
+    description: "Packet-level inbound/outbound traffic allowed/blocked by the built-in firewall"
+    paths:
+      - '\Windows\System32\LogFiles\Firewall\pfirewall.log'
+    parser: "firewall_log"
+    tag: "network"
+    category: "network"
+
+  - name: "Prefetch Execution Cache"
+    description: "PF files evidencing program execution times and frequency"
+    paths:
+      - '\Windows\Prefetch\[^.]+\.pf'
+    parser: "prefetch"
+    tag: "execution"
+    category: "system"
+
+  - name: "Shimcache (AppCompatCache)"
+    description: "Application compatibility cache embedded in the SYSTEM hive; shows executable launch evidence"
+    paths:
+      - '\Windows\System32\config\SYSTEM'
+    parser: "shimcache"
+    tag: "registry"
+    category: "system"
+
+  - name: "Amcache Program Inventory"
+    description: "Comprehensive executed-file inventory stored by the Application Compatibility feature"
+    paths:
+      - '\Windows\AppCompat\Programs\Amcache.hve'
+    parser: "amcache"
+    tag: "registry"
+    category: "system"
+
+  - name: "SRUM Usage Database"
+    description: "System Resource Usage Monitor (SRUDB.dat) – per-app network & energy usage"
+    paths:
+      - '\Windows\System32\SRU\SRUDB.dat'
+    parser: "srum"
+    tag: "usage"
+    category: "network"
+
+  - name: "USN Journal"
+    description: "NTFS change journal recording file creation, deletion and modification events"
+    paths:
+      - '\$Extend\$UsnJrnl'
+    parser: "usnjrnl"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "Master File Table (MFT)"
+    description: "Core NTFS metadata file containing every record for files and directories"
+    paths:
+      - '\$MFT'
+    parser: "mft"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "Pagefile (Swap)"
+    description: "Volatile memory pages swapped to disk; useful for strings-of-interest carving"
+    paths:
+      - '\pagefile.sys'
+    parser: "memory_swap"
+    tag: "memory"
+    category: "system"
+
+  - name: "Hibernation File"
+    description: "Memory snapshot written on hibernate; contains entire physical memory image"
+    paths:
+      - '\hiberfil.sys'
+    parser: "hibernation"
+    tag: "memory"
+    category: "system"
+
+  - name: "NTUSER Registry Hive"
+    description: "Per-user registry hive containing Run keys, typed URLs, recent docs, etc."
+    paths:
+      - '\Users\[^\\]+\\NTUSER\.DAT'
+    parser: "registry_hive"
+    tag: "registry"
+    category: "users"
+
+  - name: "UsrClass Registry Hive"
+    description: "Per-user hive with ShellBags, JumpList destinations and other shell artefacts"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Windows\\UsrClass\.dat'
+    parser: "registry_hive"
+    tag: "registry"
+    category: "users"
+
+  - name: "JumpLists – Automatic Destinations"
+    description: "Per-application automatic JumpLists showing recently accessed files"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\[^\\]+\.automaticDestinations-ms'
+    parser: "jumplist"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Recent LNK Shortcuts"
+    description: "Shortcut files revealing file launches/open operations"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\Recent Items\\[^\\]+\.lnk'
+    parser: "lnk"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Chrome Browser History"
+    description: "SQLite database of visited URLs and download entries for Google Chrome"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History'
+    parser: "chrome_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "Edge Browser History"
+    description: "Chromium-based Microsoft Edge visit history"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History'
+    parser: "edge_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "Firefox Places History"
+    description: "Visited pages and download data for Mozilla Firefox"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\[^\\]+\\places\.sqlite'
+    parser: "firefox_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "PowerShell Console History"
+    description: "Plain-text command history captured by PSReadLine for each user"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history\.txt'
+    parser: "powershell_history"
+    tag: "execution"
+    category: "users"
+
+  - name: "Scheduled Tasks Definitions"
+    description: "XML files defining one-off and recurring tasks (common persistence mechanism)"
+    paths:
+      - '\Windows\System32\Tasks\\.*'
+    parser: "scheduled_tasks"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Run/RunOnce Registry Keys"
+    description: "Autostart entries under HKLM/HKCU captured via SOFTWARE hive"
+    paths:
+      - '\Windows\System32\config\SOFTWARE'
+    parser: "registry_run"
+    tag: "persistence"
+    category: "system"
+
+  - name: "WMI Repository"
+    description: "Compiled provider database – inspect for malicious permanent event subscriptions"
+    paths:
+      - '\Windows\System32\wbem\Repository\OBJECTS\.DATA'
+    parser: "wmi_repository"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Windows Defender Operational Logs"
+    description: "Anti-malware scan and detection activity"
+    paths:
+      - '\ProgramData\Microsoft\Windows Defender\Support\\.*\.log'
+    parser: "defender_log"
+    tag: "security"
+    category: "system"
+
+  - name: "BitLocker Management Logs"
+    description: "Key-protectors and encryption state changes"
+    paths:
+      - '\Windows\System32\winevt\Logs\Microsoft-Windows-BitLocker%4BitLocker Management.evtx'
+    parser: "windows_evtx"
+    tag: "security"
+    category: "system"
+
+  - name: "Recycle Bin $I Records"
+    description: "Deleted-file metadata (.$I) holding original path & deletion time"
+    paths:
+      - '\$Recycle\.Bin\[^\\]+\\\$I[^\\]+'
+    parser: "recycle_bin"
+    tag: "filesystem"
+    category: "users"
+
+  - name: "VSS Snapshots"
+    description: "Volume Shadow Copies providing historical file versions"
+    paths:
+      - '\System Volume Information\\[0-9A-F]+\\'
+    parser: "vss"
+    tag: "backup"
+    category: "system"
+
+  - name: "BITS Job Database"
+    description: "Background Intelligent Transfer Service queue (often abused for staging)"
+    paths:
+      - '\ProgramData\Microsoft\Network\Downloader\qmgr\.db'
+    parser: "bits_db"
+    tag: "network"
+    category: "network"
+
+  - name: "IIS HTTP Logs"
+    description: "Per-site web server access logs (if IIS is installed)"
+    paths:
+      - '\inetpub\logs\LogFiles\W3SVC[^\\]+\\u_ex[0-9]+\.log'
+    parser: "iis_log"
+    tag: "web"
+    category: "network"
+
+  - name: "RDP Client Cache Bitmaps"
+    description: "Bitmap cache files revealing remote desktop activity"
+    paths:
+      - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Terminal Server Client\\Cache\\.*'
+    parser: "rdp_cache"
+    tag: "network"
+    category: "users"
+
+  - name: "Clipboard Data Store"
+    description: "Cloud/clipboard ring database for Windows 10+"
+    paths:
+      - '\Windows\ServiceProfiles\LocalService\AppData\Local\Microsoft\Windows\Clipboard\\.*'
+    parser: "clipboard_cache"
+    tag: "user"
+    category: "users"
+
+  - name: "DHCP Server Logs"
+    description: "Per-day DHCP lease logs (on servers or workstations with service enabled)"
+    paths:
+      - '\Windows\System32\dhcp\DhcpSrvLog-.*\.log'
+    parser: "dhcp_log"
+    tag: "network"
+    category: "network"
+
+  - name: "Print Spool SPL Files"
+    description: "Raw spool files holding printed document content"
+    paths:
+      - '\Windows\System32\spool\PRINTERS\\.*\.spl'
+    parser: "print_spool"
+    tag: "device"
+    category: "system"
+
+  - name: "Windows Error Reporting (WER)"
+    description: "Crash reports and application error diagnostics"
+    paths:
+      - '\ProgramData\Microsoft\Windows\WER\ReportQueue\\.*'
+    parser: "wer"
+    tag: "logs"
+    category: "system"
+
+  - name: "NetLogon Service Log"
+    description: "Domain logon negotiation and trust events – useful in lateral-movement investigations"
+    paths:
+      - '\Windows\System32\LogFiles\NetLogon\NetLogon\.log'
+    parser: "netlogon"
+    tag: "logs"
+    category: "network"
+
+  - name: "Windows Event Logs (System & Application)"
+    description: "Core Windows .evtx logs from System and Application channels"
+    paths:
+      - path: 'C:\\Windows\\System32\\winevt\\Logs\\(System|Application)\.evtx'
+        regexp: true
+    parser: "windows_evtx"
+    tag: "logs"
+    category: "system"
+
+  - name: "User Registry Hives – NTUSER.DAT"
+    description: "Per-user NTUSER.DAT registry hives under C:\\Users"
+    paths:
+      # Matches e.g. C:\Users\Alice\NTUSER.DAT, C:\Users\Bob\NTUSER.DAT
+      - path: 'C:\\Users\\[^\\]+\\NTUSER\.DAT'
+        regexp: true
+    parser: "registry_ntuser"
+    tag: "registry"
+    category: "users"
+
+  - name: "Chrome History (per-user)"
+    description: "Google Chrome History SQLite DB for each user profile"
+    paths:
+      # Default profile
+      - path: 'C:\\Users\\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History'
+        regexp: true
+      # Any profile (Profile 1, Profile 2, etc.)
+      - path: 'C:\\Users\\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Profile [0-9]+\\History'
+        regexp: true
+    parser: "chrome_history"
+    tag: "browser"
+    category: "application"
+
+  - name: "SQLite Databases"
+    description: "Generic search for SQLite database files"
+    paths:
+      - path: '.*\.sqlite$'
+        regexp: true
+      - path: '.*\.db$'
+        regexp: true
+      - path: '.*\.s3db$'
+        regexp: true
+    parser: "sqlite"
+    tag: "database"
+    category: "system"
+
+  - name: "Procmon Log (PML)"
+    description: "Process Monitor Log files"
+    paths:
+      - path: '.*\.PML$'
+        regexp: true
+    parser: "windows_pml"
+    tag: "logs"
+    category: "system"
+
+  - name: "Portable Executable (PE)"
+    description: "Windows Executables/DLLs/Drivers"
+    paths:
+      - path: '.*\.(exe|dll|sys)$'
+        regexp: true
+    parser: "windows_pe"
+    tag: "executables"
+    category: "system"
+
+  # ---------------- Linux Artifacts (Extended) ----------------
+
+  - name: "Linux Authentication Logs"
+    description: "Authentication and privilege events from PAM/sshd/sudo on Debian and RHEL families"
+    paths:
+      - "/var/log/auth.log"
+      - "/var/log/secure"
+    parser: "linux_auth_log"
+    tag: "logs"
+    category: "users"
+
+  - name: "Linux Auditd Logs"
+    description: "Kernel-backed audit trail including execve, file access and policy enforcement events"
+    paths:
+      - "/var/log/audit/audit.log"
+      - path: '^/var/log/audit/audit\.log\.[0-9]+$'
+        regexp: true
+    parser: "linux_auditd"
+    tag: "security"
+    category: "system"
+
+  - name: "Linux Login Failure Records"
+    description: "Binary login failure counters and lockout tracking"
+    paths:
+      - "/var/log/faillog"
+      - "/var/log/tallylog"
+    parser: "linux_login_failures"
+    tag: "logs"
+    category: "users"
+
+  - name: "Linux Rotated Syslog Files"
+    description: "Rotated compressed/plain syslog files for timeline reconstruction"
+    paths:
+      - path: '^/var/log/(syslog|messages|auth\.log|secure)(\.[0-9]+)?(\.gz)?$'
+        regexp: true
+    parser: "syslog"
+    tag: "logs"
+    category: "system"
+
+  - name: "Linux Sudo Standalone Log"
+    description: "Dedicated sudo command execution log where configured"
+    paths:
+      - "/var/log/sudo.log"
+    parser: "sudo_log"
+    tag: "logs"
+    category: "users"
+
+  - name: "Linux User Shell Histories"
+    description: "Per-user shell command histories from Bash, Zsh and Fish"
+    paths:
+      - path: '^/home/[^/]+/\.(bash_history|zsh_history|python_history)$'
+        regexp: true
+      - path: '^/home/[^/]+/\.local/share/fish/fish_history$'
+        regexp: true
+      - path: '^/root/\.(bash_history|zsh_history)$'
+        regexp: true
+    parser: "linux_shell_history"
+    tag: "history"
+    category: "users"
+
+  - name: "Linux User SSH Artefacts"
+    description: "Per-user SSH trust and key material indicating remote access behavior"
+    paths:
+      - path: '^/home/[^/]+/\.ssh/(authorized_keys|known_hosts|config)$'
+        regexp: true
+      - path: '^/home/[^/]+/\.ssh/id_[^/]+$'
+        regexp: true
+      - path: '^/root/\.ssh/(authorized_keys|known_hosts|config)$'
+        regexp: true
+    parser: "linux_ssh_user_artifacts"
+    tag: "network"
+    category: "users"
+
+  - name: "Linux Cron Directories and User Crontabs"
+    description: "Recurring and one-off scheduled execution definitions"
+    paths:
+      - path: '^/etc/cron\.(d|daily|hourly|weekly|monthly)/.*$'
+        regexp: true
+      - path: "^/var/spool/cron/crontabs/[^/]+$"
+        regexp: true
+      - path: "^/var/spool/cron/[^/]+$"
+        regexp: true
+      - "/etc/anacrontab"
+    parser: "linux_cron"
+    tag: "jobs"
+    category: "system"
+
+  - name: "Linux At Jobs Queue"
+    description: "Deferred execution queue often used for delayed persistence"
+    paths:
+      - path: "^/var/spool/at/jobs/.*$"
+        regexp: true
+      - path: "^/var/spool/cron/atjobs/.*$"
+        regexp: true
+    parser: "linux_at_jobs"
+    tag: "jobs"
+    category: "system"
+
+  - name: "Linux Systemd Unit Files"
+    description: "Service/timer/socket unit definitions including local overrides"
+    paths:
+      - path: '^/etc/systemd/system/.*\.(service|timer|socket|mount|path)$'
+        regexp: true
+      - path: '^/(usr/lib|lib)/systemd/system/.*\.(service|timer|socket|mount|path)$'
+        regexp: true
+    parser: "systemd_unit_files"
+    tag: "config"
+    category: "system"
+
+  - name: "Linux Init Scripts and rc.local"
+    description: "Legacy SysV init scripts and rc.local startup hooks"
+    paths:
+      - "/etc/rc.local"
+      - path: '^/etc/init\.d/.*$'
+        regexp: true
+    parser: "linux_init_scripts"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Linux NetworkManager Profiles"
+    description: "Saved network profiles including SSIDs, VPN and static route settings"
+    paths:
+      - path: '^/etc/NetworkManager/system-connections/[^/]+(\.nmconnection)?$'
+        regexp: true
+    parser: "networkmanager_profiles"
+    tag: "config"
+    category: "network"
+
+  - name: "Linux DHCP Lease Files"
+    description: "Client lease records revealing historical network attachment and gateway/DNS details"
+    paths:
+      - path: '^/var/lib/dhcp/.*\.lease(s)?$'
+        regexp: true
+      - path: '^/var/lib/NetworkManager/.*\.lease$'
+        regexp: true
+    parser: "dhcp_leases"
+    tag: "network"
+    category: "network"
+
+  - name: "Linux Firewall Configuration"
+    description: "Persisted iptables/nftables rulesets"
+    paths:
+      - "/etc/iptables/rules.v4"
+      - "/etc/iptables/rules.v6"
+      - "/etc/nftables.conf"
+    parser: "firewall_config"
+    tag: "security"
+    category: "network"
+
+  - name: "Linux VPN Configuration"
+    description: "OpenVPN and WireGuard endpoint configuration files"
+    paths:
+      - path: '^/etc/openvpn/.*\.conf$'
+        regexp: true
+      - path: '^/etc/wireguard/.*\.conf$'
+        regexp: true
+    parser: "vpn_config"
+    tag: "network"
+    category: "network"
+
+  - name: "Linux Browser History – Chromium Family"
+    description: "Per-user browsing history for Chrome/Chromium/Edge on Linux"
+    paths:
+      - path: '^/home/[^/]+/\.config/(google-chrome|chromium|microsoft-edge)/Default/History$'
+        regexp: true
+      - path: '^/home/[^/]+/\.config/(google-chrome|chromium|microsoft-edge)/Profile [0-9]+/History$'
+        regexp: true
+    parser: "chromium_history_linux"
+    tag: "browser"
+    category: "users"
+
+  - name: "Linux Firefox Places History"
+    description: "Per-profile Firefox places.sqlite containing visited URLs and downloads"
+    paths:
+      - path: '^/home/[^/]+/\.mozilla/firefox/[^/]+/places\.sqlite$'
+        regexp: true
+    parser: "firefox_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "Linux Recent Documents (XBEL)"
+    description: "Desktop environment recent-file references"
+    paths:
+      - path: '^/home/[^/]+/\.local/share/recently-used\.xbel$'
+        regexp: true
+    parser: "xbel_recent_files"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Linux Trash Metadata"
+    description: "Deleted item metadata with original path and deletion timestamp"
+    paths:
+      - path: '^/home/[^/]+/\.local/share/Trash/info/.*\.trashinfo$'
+        regexp: true
+    parser: "trashinfo"
+    tag: "filesystem"
+    category: "users"
+
+  - name: "Linux Thumbnail Caches"
+    description: "Desktop thumbnail caches evidencing viewed images/documents"
+    paths:
+      - path: '^/home/[^/]+/\.cache/thumbnails/.*$'
+        regexp: true
+    parser: "thumbnail_cache"
+    tag: "media"
+    category: "media"
+
+  - name: "Linux Udev Device Database"
+    description: "Device metadata records useful for USB and peripheral attachment history"
+    paths:
+      - path: "^/(run|var/lib)/udev/data/.*$"
+        regexp: true
+    parser: "udev_data"
+    tag: "device"
+    category: "system"
+
+  - name: "Linux DPKG Status Database"
+    description: "Installed package inventory and state on Debian-based systems"
+    paths:
+      - "/var/lib/dpkg/status"
+    parser: "dpkg_status"
+    tag: "packages"
+    category: "system"
+
+  - name: "Linux RPM Package Database"
+    description: "Installed package metadata on RPM-based systems"
+    paths:
+      - "/var/lib/rpm/Packages"
+    parser: "rpm_db"
+    tag: "packages"
+    category: "system"
+
+  - name: "Linux Mail Logs"
+    description: "Mail transfer activity useful for data exfiltration investigations"
+    paths:
+      - "/var/log/mail.log"
+      - "/var/log/maillog"
+    parser: "mail_log"
+    tag: "logs"
+    category: "network"
+
+  # ---------------- macOS Artifacts ----------------
+
+  - name: "macOS Unified Logs (tracev3)"
+    description: "Apple unified logging store (high-volume system and app telemetry)"
+    paths:
+      - path: '^/private/var/db/diagnostics/.*\.tracev3$'
+        regexp: true
+      - path: "^/private/var/db/uuidtext/.*$"
+        regexp: true
+    parser: "macos_unified_log"
+    tag: "logs"
+    category: "system"
+
+  - name: "macOS ASL Logs (Legacy)"
+    description: "Legacy Apple System Log files on older macOS releases"
+    paths:
+      - path: '^/private/var/log/asl/.*\.asl$'
+        regexp: true
+    parser: "macos_asl"
+    tag: "logs"
+    category: "system"
+
+  - name: "macOS System and Install Logs"
+    description: "System lifecycle and software installation events"
+    paths:
+      - "/private/var/log/system.log"
+      - "/private/var/log/install.log"
+    parser: "macos_syslog"
+    tag: "logs"
+    category: "system"
+
+  - name: "macOS FSEvents Journals"
+    description: "Filesystem change journals for APFS/HFS+ volumes"
+    paths:
+      - path: '^/\.fseventsd/.*$'
+        regexp: true
+      - path: '^/Volumes/[^/]+/\.fseventsd/.*$'
+        regexp: true
+    parser: "macos_fsevents"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "macOS LaunchDaemons and System LaunchAgents"
+    description: "System-wide launchd persistence definitions"
+    paths:
+      - path: '^/(System/Library|Library)/LaunchDaemons/.*\.plist$'
+        regexp: true
+      - path: '^/(System/Library|Library)/LaunchAgents/.*\.plist$'
+        regexp: true
+    parser: "macos_launchd_plist"
+    tag: "persistence"
+    category: "system"
+
+  - name: "macOS User LaunchAgents"
+    description: "Per-user launchd persistence definitions"
+    paths:
+      - path: '^/Users/[^/]+/Library/LaunchAgents/.*\.plist$'
+        regexp: true
+    parser: "macos_launchd_plist"
+    tag: "persistence"
+    category: "users"
+
+  - name: "macOS Cron and At Jobs"
+    description: "Legacy periodic job configuration and queued executions"
+    paths:
+      - "/private/etc/crontab"
+      - path: "^/private/var/at/tabs/[^/]+$"
+        regexp: true
+      - path: "^/private/var/at/jobs/.*$"
+        regexp: true
+    parser: "macos_cron"
+    tag: "jobs"
+    category: "system"
+
+  - name: "macOS Local Directory Service Accounts"
+    description: "User/group account plist records in dslocal"
+    paths:
+      - path: '^/private/var/db/dslocal/nodes/Default/users/[^/]+\.plist$'
+        regexp: true
+      - path: '^/private/var/db/dslocal/nodes/Default/groups/[^/]+\.plist$'
+        regexp: true
+    parser: "macos_dslocal"
+    tag: "accounts"
+    category: "users"
+
+  - name: "macOS User Shell Histories"
+    description: "Per-user command histories and zsh session trails"
+    paths:
+      - path: '^/Users/[^/]+/\.(zsh_history|bash_history)$'
+        regexp: true
+      - path: '^/Users/[^/]+/\.zsh_sessions/.*\.history$'
+        regexp: true
+    parser: "macos_shell_history"
+    tag: "history"
+    category: "users"
+
+  - name: "macOS User SSH Artefacts"
+    description: "Per-user SSH trust, config and private/public key files"
+    paths:
+      - path: '^/Users/[^/]+/\.ssh/(known_hosts|authorized_keys|config)$'
+        regexp: true
+      - path: '^/Users/[^/]+/\.ssh/id_[^/]+$'
+        regexp: true
+    parser: "ssh_user_files"
+    tag: "network"
+    category: "users"
+
+  - name: "macOS Loginwindow Preferences"
+    description: "Login items and interactive session behavior preferences"
+    paths:
+      - "/Library/Preferences/com.apple.loginwindow.plist"
+      - path: '^/Users/[^/]+/Library/Preferences/com.apple.loginwindow\.plist$'
+        regexp: true
+    parser: "plist"
+    tag: "config"
+    category: "users"
+
+  - name: "macOS TCC Privacy Databases"
+    description: "Privacy consent decisions for camera/microphone/filesystem access"
+    paths:
+      - "/Library/Application Support/com.apple.TCC/TCC.db"
+      - path: '^/Users/[^/]+/Library/Application Support/com.apple.TCC/TCC\.db$'
+        regexp: true
+    parser: "macos_tcc"
+    tag: "privacy"
+    category: "users"
+
+  - name: "macOS Quarantine Events Database"
+    description: "Gatekeeper quarantine records for downloaded items"
+    paths:
+      - path: "^/Users/[^/]+/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2$"
+        regexp: true
+    parser: "macos_quarantine"
+    tag: "security"
+    category: "users"
+
+  - name: "macOS Spotlight Metadata Store"
+    description: "Spotlight indexing database containing searchable file metadata"
+    paths:
+      - path: '^/\.Spotlight-V100/Store-V2/.*$'
+        regexp: true
+      - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/.*$'
+        regexp: true
+    parser: "macos_spotlight_store"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "macOS KnowledgeC Database"
+    description: "CoreDuet behavioral timeline (apps, interactions, mobility context)"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/Knowledge/knowledgeC\.db$'
+        regexp: true
+    parser: "macos_knowledgec"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "macOS Safari History"
+    description: "Safari browsing and download metadata"
+    paths:
+      - path: '^/Users/[^/]+/Library/Safari/History\.db$'
+        regexp: true
+    parser: "safari_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "macOS Safari Downloads"
+    description: "Safari download plist with source URLs and target paths"
+    paths:
+      - path: '^/Users/[^/]+/Library/Safari/Downloads\.plist$'
+        regexp: true
+    parser: "safari_downloads"
+    tag: "browser"
+    category: "users"
+
+  - name: "macOS Safari Bookmarks and Sessions"
+    description: "Safari bookmarks and last session state"
+    paths:
+      - path: '^/Users/[^/]+/Library/Safari/Bookmarks\.plist$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Safari/LastSession\.plist$'
+        regexp: true
+    parser: "safari_plist"
+    tag: "browser"
+    category: "users"
+
+  - name: "macOS Browser History – Chromium Family"
+    description: "Chrome/Chromium/Edge/Brave per-profile browsing history"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium|Microsoft Edge|BraveSoftware/Brave-Browser)/Default/History$"
+        regexp: true
+      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium|Microsoft Edge|BraveSoftware/Brave-Browser)/Profile [0-9]+/History$"
+        regexp: true
+    parser: "chromium_history_macos"
+    tag: "browser"
+    category: "users"
+
+  - name: "macOS Firefox Places History"
+    description: "Firefox profile history and download metadata"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/Firefox/Profiles/[^/]+/places\.sqlite$'
+        regexp: true
+    parser: "firefox_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "macOS iMessage Database"
+    description: "Messages chat database containing SMS/iMessage conversation metadata and content"
+    paths:
+      - path: '^/Users/[^/]+/Library/Messages/chat\.db$'
+        regexp: true
+    parser: "imessage_chatdb"
+    tag: "communications"
+    category: "users"
+
+  - name: "macOS Call History Database"
+    description: "FaceTime/Phone call history records"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/CallHistoryDB/CallHistory\.storedata$'
+        regexp: true
+    parser: "macos_callhistory"
+    tag: "communications"
+    category: "users"
+
+  - name: "macOS Notification Center Databases"
+    description: "Notification records and displayed alert metadata"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/NotificationCenter/.*\.db$'
+        regexp: true
+    parser: "macos_notification_db"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "macOS SharedFileList Recent Items"
+    description: "Recent documents/items lists in SFL/SFL2 format"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/com.apple.sharedfilelist/.*\.(sfl|sfl2)$'
+        regexp: true
+    parser: "macos_sfl"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "macOS QuickLook Thumbnail Cache"
+    description: "QuickLook thumbnail database of previewed files"
+    paths:
+      - path: '^/Users/[^/]+/Library/Caches/com.apple.QuickLook.thumbnailcache/index\.sqlite$'
+        regexp: true
+    parser: "macos_quicklook_thumbnail"
+    tag: "media"
+    category: "media"
+
+  - name: "macOS Photos Library Database"
+    description: "Apple Photos database with media metadata and timelines"
+    paths:
+      - path: '^/Users/[^/]+/Pictures/Photos Library\.photoslibrary/database/Photos\.sqlite$'
+        regexp: true
+    parser: "macos_photos_sqlite"
+    tag: "media"
+    category: "media"
+
+  - name: "macOS Diagnostic Reports"
+    description: "Application/system crash diagnostics (.crash/.ips)"
+    paths:
+      - path: '^/Library/Logs/DiagnosticReports/.*\.(crash|ips)$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Logs/DiagnosticReports/.*\.(crash|ips)$'
+        regexp: true
+    parser: "macos_crash_reports"
+    tag: "logs"
+    category: "application"
+
+  - name: "macOS Wi-Fi and Network Configuration Plists"
+    description: "Persistent Wi-Fi and network interface configuration"
+    paths:
+      - "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist"
+      - "/Library/Preferences/SystemConfiguration/preferences.plist"
+      - "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"
+    parser: "plist"
+    tag: "network"
+    category: "network"
+
+  - name: "macOS DHCP Client Leases"
+    description: "Host lease records containing assigned IP/DNS/router data"
+    paths:
+      - path: "^/private/var/db/dhcpclient/leases/.*$"
+        regexp: true
+    parser: "macos_dhcp_leases"
+    tag: "network"
+    category: "network"
+
+  - name: "macOS PF Firewall Configuration"
+    description: "Packet filter rules and custom anchors"
+    paths:
+      - "/etc/pf.conf"
+      - path: '^/etc/pf\.anchors/.*$'
+        regexp: true
+    parser: "pf_conf"
+    tag: "security"
+    category: "network"
+
+  # ---------------- Windows Artifacts (Extended) ----------------
+
+  - name: "Windows Event Logs – High-Value Operational Channels"
+    description: "Task Scheduler, PowerShell, Sysmon, WMI and RDP operational logs"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Microsoft-Windows-TaskScheduler%4Operational\.evtx$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Microsoft-Windows-PowerShell%4Operational\.evtx$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Windows PowerShell\.evtx$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Microsoft-Windows-Sysmon%4Operational\.evtx$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Microsoft-Windows-WMI-Activity%4Operational\.evtx$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]winevt[\\/]Logs[\\/]Microsoft-Windows-TerminalServices-(LocalSessionManager|RemoteConnectionManager)%4Operational\.evtx$'
+        regexp: true
+    parser: "windows_evtx"
+    tag: "logs"
+    category: "system"
+
+  - name: "Windows Core Registry Hives"
+    description: "SYSTEM/SOFTWARE/SAM/SECURITY/DEFAULT machine hives"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/](SYSTEM|SOFTWARE|SAM|SECURITY|DEFAULT)$'
+        regexp: true
+    parser: "registry_hive_windows"
+    tag: "registry"
+    category: "system"
+
+  - name: "Windows Prefetch Files (Regex Normalized)"
+    description: "Program execution traces from Prefetch cache"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]Prefetch[\\/][^\\/]+\.pf$'
+        regexp: true
+    parser: "prefetch"
+    tag: "execution"
+    category: "system"
+
+  - name: "Windows Shimcache Source Hive (Regex Normalized)"
+    description: "SYSTEM hive source for AppCompatCache extraction"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
+        regexp: true
+    parser: "shimcache"
+    tag: "registry"
+    category: "system"
+
+  - name: "Windows Amcache (Regex Normalized)"
+    description: "Application compatibility inventory database"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]AppCompat[\\/]Programs[\\/]Amcache\.hve$'
+        regexp: true
+    parser: "amcache"
+    tag: "registry"
+    category: "system"
+
+  - name: "Windows SRUM Database (Regex Normalized)"
+    description: "Per-application resource and network usage"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]SRU[\\/]SRUDB\.dat$'
+        regexp: true
+    parser: "srum"
+    tag: "usage"
+    category: "network"
+
+  - name: "Windows Scheduled Tasks XML (Regex Normalized)"
+    description: "Task definitions used for persistence and execution"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]Tasks[\\/].+$'
+        regexp: true
+    parser: "scheduled_tasks"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Windows TaskCache Registry Source"
+    description: "SOFTWARE hive source for scheduled task registry metadata"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SOFTWARE$'
+        regexp: true
+    parser: "taskcache_registry"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Windows BAM/DAM Registry Source"
+    description: "SYSTEM hive source for background activity monitoring execution traces"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
+        regexp: true
+    parser: "bam_dam"
+    tag: "execution"
+    category: "system"
+
+  - name: "Windows UserAssist Registry Source"
+    description: "NTUSER.DAT source for GUI application execution traces"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]NTUSER\.DAT$'
+        regexp: true
+    parser: "userassist"
+    tag: "execution"
+    category: "users"
+
+  - name: "Windows RunMRU and TypedPaths Registry Source"
+    description: "NTUSER.DAT source for run-dialog and explorer typed path artifacts"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]NTUSER\.DAT$'
+        regexp: true
+    parser: "runmru_typedpaths"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Windows ShellBags Registry Source"
+    description: "UsrClass.dat source for shell folder navigation history"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]UsrClass\.dat$'
+        regexp: true
+    parser: "shellbags"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Windows JumpLists – Automatic and Custom Destinations"
+    description: "Recent files and task invocation history per application"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Recent[\\/]AutomaticDestinations[\\/].*\.automaticDestinations-ms$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Recent[\\/]CustomDestinations[\\/].*\.customDestinations-ms$'
+        regexp: true
+    parser: "jumplist"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Windows Recent Shortcut Files (Regex Normalized)"
+    description: "LNK files evidencing document and executable access"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Recent[\\/].*\.lnk$'
+        regexp: true
+    parser: "lnk"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Windows ActivitiesCache Timeline Database"
+    description: "Windows Timeline activity records per user"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]ConnectedDevicesPlatform[\\/].*[\\/]ActivitiesCache\.db$'
+        regexp: true
+    parser: "activitiescache"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Windows WebCache Database"
+    description: "Legacy IE/Edge cache and history ESE database"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]WebCache[\\/]WebCacheV01\.dat$'
+        regexp: true
+    parser: "webcache"
+    tag: "browser"
+    category: "users"
+
+  - name: "Windows Browser History – Chromium Family (Regex Normalized)"
+    description: "Chrome and Edge history across default and numbered profiles"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/](Google[\\/]Chrome|Microsoft[\\/]Edge)[\\/]User Data[\\/]Default[\\/]History$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/](Google[\\/]Chrome|Microsoft[\\/]Edge)[\\/]User Data[\\/]Profile [0-9]+[\\/]History$'
+        regexp: true
+    parser: "chromium_history_windows"
+    tag: "browser"
+    category: "users"
+
+  - name: "Windows Firefox Places History (Regex Normalized)"
+    description: "Firefox profile browsing and download metadata"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Mozilla[\\/]Firefox[\\/]Profiles[\\/][^\\/]+[\\/]places\.sqlite$'
+        regexp: true
+    parser: "firefox_history"
+    tag: "browser"
+    category: "users"
+
+  - name: "Windows Startup Folder Items"
+    description: "Startup folder executables/shortcuts used for logon persistence"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Windows[\\/]Start Menu[\\/]Programs[\\/]StartUp[\\/].+$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Start Menu[\\/]Programs[\\/]Startup[\\/].+$'
+        regexp: true
+    parser: "startup_items"
+    tag: "persistence"
+    category: "users"
+
+  - name: "Windows Services Registry Source"
+    description: "SYSTEM hive source for service-based persistence and startup settings"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
+        regexp: true
+    parser: "services_registry"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Windows IFEO Registry Source"
+    description: "SOFTWARE hive source for Image File Execution Options debugger hijacks"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SOFTWARE$'
+        regexp: true
+    parser: "ifeo_registry"
+    tag: "persistence"
+    category: "system"
+
+  - name: "Windows LSA Secrets Source"
+    description: "SECURITY hive source for policy secrets and credential material"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SECURITY$'
+        regexp: true
+    parser: "lsa_secrets"
+    tag: "security"
+    category: "system"
+
+  - name: "Windows WLAN Profiles"
+    description: "Stored wireless profile XML files with SSID and auth details"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Wlansvc[\\/]Profiles[\\/]Interfaces[\\/].*\.xml$'
+        regexp: true
+    parser: "wlan_profiles"
+    tag: "network"
+    category: "network"
+
+  - name: "Windows Hosts File (Regex Normalized)"
+    description: "Static hostname resolution overrides"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]drivers[\\/]etc[\\/]hosts$'
+        regexp: true
+    parser: "hosts_file"
+    tag: "config"
+    category: "network"
+
+  - name: "Windows NTFS $LogFile"
+    description: "NTFS transaction log with metadata operations"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]\\$LogFile$'
+        regexp: true
+    parser: "ntfs_logfile"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "Windows USN Journal (Regex Normalized)"
+    description: "NTFS update sequence number journal stream"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]\\$Extend[\\/]\\$UsnJrnl$'
+        regexp: true
+    parser: "usnjrnl"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "Windows Master File Table (Regex Normalized)"
+    description: "Primary NTFS metadata table"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]\\$MFT$'
+        regexp: true
+    parser: "mft"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "Windows Recycle Bin Records and Payloads"
+    description: "Recycle metadata and deleted file payload entries"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]\\$Recycle\.Bin[\\/][^\\/]+[\\/]\\$I.*$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]\\$Recycle\.Bin[\\/][^\\/]+[\\/]\\$R.*$'
+        regexp: true
+    parser: "recycle_bin"
+    tag: "filesystem"
+    category: "users"
+
+  - name: "Windows Search Database"
+    description: "Windows Search index ESE database"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Search[\\/]Data[\\/]Applications[\\/]Windows[\\/]Windows\.edb$'
+        regexp: true
+    parser: "windows_search_edb"
+    tag: "database"
+    category: "application"
+
+  - name: "Windows Thumbcache and Iconcache"
+    description: "Thumbnail and icon caches evidencing viewed media/files"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]Explorer[\\/](thumbcache_[^\\/]+\.db|iconcache_[^\\/]+\.db)$'
+        regexp: true
+    parser: "thumbcache"
+    tag: "media"
+    category: "media"
+
+  - name: "Windows SetupAPI Device Logs"
+    description: "Hardware installation and driver setup logs"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]INF[\\/]setupapi\.(dev|app)\.log$'
+        regexp: true
+    parser: "setupapi_log"
+    tag: "device"
+    category: "system"
+
+  - name: "Windows CBS Servicing Logs"
+    description: "Component-based servicing activity and update operations"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]Logs[\\/]CBS[\\/]CBS\.log$'
+        regexp: true
+    parser: "cbs_log"
+    tag: "logs"
+    category: "system"
+
+  - name: "Windows OneDrive Client Logs"
+    description: "Sync activity and account interaction logs for OneDrive client"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]OneDrive[\\/]logs[\\/].+$'
+        regexp: true
+    parser: "onedrive_logs"
+    tag: "cloud"
+    category: "application"
+
+  - name: "Windows Default RDP Connection File"
+    description: "Default .rdp file with remote host and client options"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]Documents[\\/]Default\.rdp$'
+        regexp: true
+    parser: "rdp_default"
+    tag: "network"
+    category: "users"
+
+  - name: "Windows Defender Quarantine Entries"
+    description: "Quarantined malware metadata and item records"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Windows Defender[\\/]Quarantine[\\/]Entries[\\/].+$'
+        regexp: true
+    parser: "defender_quarantine"
+    tag: "security"
+    category: "system"
