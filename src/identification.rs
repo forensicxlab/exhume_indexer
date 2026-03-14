@@ -36,7 +36,8 @@ pub async fn identify_file_types<T: Filesystem>(
     .bind(evidence_id)
     .bind(partition_id)
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(r) => Ok(r),
         Err(e) => Err(format!("Could not list files for signature pass: {e:?}")),
     };
@@ -51,7 +52,8 @@ pub async fn identify_file_types<T: Filesystem>(
                     event_type: IndexerEventType::Error,
                     message: msg.clone(),
                 },
-            ).await;
+            )
+            .await;
             error!("{}", msg);
             return;
         }
@@ -66,7 +68,8 @@ pub async fn identify_file_types<T: Filesystem>(
                 event_type: IndexerEventType::Success,
                 message: "No regular file to analyse (skipping file-type module).".to_string(),
             },
-        ).await;
+        )
+        .await;
         return;
     }
 
@@ -88,7 +91,8 @@ pub async fn identify_file_types<T: Filesystem>(
                     event_type: IndexerEventType::Error,
                     message: msg.clone(),
                 },
-            ).await;
+            )
+            .await;
             error!("{}", msg);
             return;
         }
@@ -106,15 +110,13 @@ pub async fn identify_file_types<T: Filesystem>(
         // FS record - Try ID first, then fallback to path for FolderFS
         let record = match fs.get_file(record_id) {
             Ok(rec) => rec,
-            Err(_) => {
-                match fs.get_file_by_path(&path, record_id) {
-                    Ok(rec) => rec,
-                    Err(e) => {
-                        error!("get_file error id={record_id} path={path}: {e}");
-                        continue;
-                    }
+            Err(_) => match fs.get_file_by_path(&path, record_id) {
+                Ok(rec) => rec,
+                Err(e) => {
+                    error!("get_file error id={record_id} path={path}: {e}");
+                    continue;
                 }
-            }
+            },
         };
 
         if record.is_dir() {
@@ -132,7 +134,7 @@ pub async fn identify_file_types<T: Filesystem>(
 
         // Signature → UPDATE
         let ft = FileType::from_bytes(&prefix);
-        
+
         let update_err = match sqlx::query(
             r#"
             UPDATE system_files
@@ -151,7 +153,8 @@ pub async fn identify_file_types<T: Filesystem>(
         .bind(partition_id)
         .bind(record_id as i64)
         .execute(&mut *tx)
-        .await {
+        .await
+        {
             Ok(_) => None,
             Err(e) => Some(format!("DB update error id={record_id}: {e:?}")),
         };
@@ -166,10 +169,14 @@ pub async fn identify_file_types<T: Filesystem>(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Info,
+                    event_type: IndexerEventType::Progress {
+                        current: processed,
+                        total,
+                    },
                     message: format!("Signature analysed for {processed}/{total} files…"),
                 },
-            ).await;
+            )
+            .await;
         }
     }
 
@@ -189,12 +196,16 @@ pub async fn identify_file_types<T: Filesystem>(
                 event_type: IndexerEventType::Error,
                 message: msg.clone(),
             },
-        ).await;
+        )
+        .await;
         error!("{}", msg);
         return;
     }
 
-    info!("File-signature identification completed for evidence {} partition {}.", evidence_id, partition_id);
+    info!(
+        "File-signature identification completed for evidence {} partition {}.",
+        evidence_id, partition_id
+    );
 
     send_progress(
         &tx_progress,
@@ -203,5 +214,6 @@ pub async fn identify_file_types<T: Filesystem>(
             event_type: IndexerEventType::Success,
             message: format!("File-signature identification done for {total} files."),
         },
-    ).await;
+    )
+    .await;
 }

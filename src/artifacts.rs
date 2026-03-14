@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
@@ -74,6 +76,52 @@ impl ArtifactSet {
     }
 }
 
+fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::Error> {
+    Ok(File {
+        id: row.try_get("id")?,
+        // SQLite stores INTEGER as signed i64. Reinterpret wrapped values so
+        // folder-backed identifiers above i64::MAX round-trip correctly.
+        identifier: row.try_get::<i64, _>("identifier")? as u64,
+        absolute_path: row.try_get("absolute_path")?,
+        name: row.try_get("name")?,
+        ftype: row.try_get("ftype")?,
+        size: row.try_get::<i64, _>("size")? as u64,
+        created: row
+            .try_get::<Option<i64>, _>("created")?
+            .map(|value| value as u64),
+        modified: row
+            .try_get::<Option<i64>, _>("modified")?
+            .map(|value| value as u64),
+        accessed: row
+            .try_get::<Option<i64>, _>("accessed")?
+            .map(|value| value as u64),
+        permissions: row.try_get("permissions")?,
+        owner: row.try_get("owner")?,
+        group: row.try_get("group")?,
+        display: row.try_get("display")?,
+        sig_name: row.try_get("sig_name")?,
+        sig_mime: row.try_get("sig_mime")?,
+        sig_exts: row.try_get("sig_exts")?,
+        metadata: row.try_get("metadata")?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ArtifactSet;
+
+    #[test]
+    fn embedded_artifacts_yaml_parses() {
+        let yaml = include_str!("../artifacts.yaml");
+        let artifact_set =
+            ArtifactSet::from_yaml_str(yaml).expect("embedded artifacts.yaml should parse");
+        assert!(
+            !artifact_set.artifacts.is_empty(),
+            "embedded artifacts.yaml should contain entries"
+        );
+    }
+}
+
 pub async fn identify_artefacts(
     evidence_id: i64,
     partition_id: i64,
@@ -100,11 +148,15 @@ pub async fn identify_artefacts(
             Ok(t) => t,
             Err(e) => {
                 let msg = format!("Failed to read artifacts YAML file at {}: {}", path, e);
-                send_progress(&tx_progress, IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                }).await;
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Error,
+                        message: msg.clone(),
+                    },
+                )
+                .await;
                 error!("{}", msg);
                 return;
             }
@@ -116,11 +168,15 @@ pub async fn identify_artefacts(
         Ok(s) => s,
         Err(e) => {
             let msg = format!("Failed to parse artifacts YAML: {}", e);
-            send_progress(&tx_progress, IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            }).await;
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Error,
+                    message: msg.clone(),
+                },
+            )
+            .await;
             error!("{}", msg);
             return;
         }
@@ -141,11 +197,15 @@ pub async fn identify_artefacts(
     .await
     {
         let msg = format!("Failed to clear existing parsed artefacts: {err}");
-        send_progress(&tx_progress, IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Error,
-            message: msg.clone(),
-        }).await;
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Error,
+                message: msg.clone(),
+            },
+        )
+        .await;
         error!("{}", msg);
         return;
     }
@@ -163,64 +223,133 @@ pub async fn identify_artefacts(
     .await
     {
         let msg = format!("Failed to clear existing artefacts: {err}");
-        send_progress(&tx_progress, IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Error,
-            message: msg.clone(),
-        }).await;
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Error,
+                message: msg.clone(),
+            },
+        )
+        .await;
         error!("{}", msg);
         return;
     }
 
-    send_progress(&tx_progress, IndexerEvent {
-        evidence_id,
-        event_type: IndexerEventType::Info,
-        message: "Identifying known artefacts…".to_string(),
-    }).await;
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Info,
+            message: "Identifying known artefacts…".to_string(),
+        },
+    )
+    .await;
 
+    // Fetch all files once to avoid redundant queries in the loop
+    let all_files_res = sqlx::query(
+        "SELECT * FROM system_files \
+             WHERE evidence_id = ?1 \
+             AND partition_id = ?2;",
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .fetch_all(pool)
+    .await;
+
+    let all_files = match all_files_res {
+        Ok(rows) => {
+            let mut files = Vec::with_capacity(rows.len());
+            for row in rows {
+                match decode_system_file_row(&row) {
+                    Ok(file) => files.push(file),
+                    Err(e) => {
+                        let msg = format!(
+                            "Failed to decode system_files row for partition {}: {}",
+                            partition_id, e
+                        );
+                        send_progress(
+                            &tx_progress,
+                            IndexerEvent {
+                                evidence_id,
+                                event_type: IndexerEventType::Error,
+                                message: msg.clone(),
+                            },
+                        )
+                        .await;
+                        error!("{}", msg);
+                        return;
+                    }
+                }
+            }
+            files
+        }
+        Err(e) => {
+            let msg = format!(
+                "Failed to query DB for files in partition {}: {}",
+                partition_id, e
+            );
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Error,
+                    message: msg.clone(),
+                },
+            )
+            .await;
+            error!("{}", msg);
+            return;
+        }
+    };
+
+    // Pre-compile all artifact regexes
+    let mut compiled_artifacts = Vec::new();
     for artifact in &artifact_set.artifacts {
+        let mut patterns = Vec::new();
         for path_spec in &artifact.paths {
             let pattern = path_spec.to_regex();
-            let rx = match regex::Regex::new(&pattern) {
-                Ok(r) => r,
+            match regex::Regex::new(&pattern) {
+                Ok(rx) => patterns.push(rx),
                 Err(e) => {
-                    let msg = format!("Invalid regex pattern '{}' for artifact '{}': {e}", pattern, artifact.name);
-                    send_progress(&tx_progress, IndexerEvent {
-                        evidence_id,
-                        event_type: IndexerEventType::Error,
-                        message: msg.clone(),
-                    }).await;
+                    let msg = format!(
+                        "Invalid regex pattern '{}' for artifact '{}': {e}",
+                        pattern, artifact.name
+                    );
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Error,
+                            message: msg.clone(),
+                        },
+                    )
+                    .await;
                     error!("{}", msg);
-                    continue;
                 }
-            };
+            }
+        }
+        if !patterns.is_empty() {
+            compiled_artifacts.push((artifact, patterns));
+        }
+    }
 
-            let au_file_paths_res = sqlx::query_as::<_, File>(
-                "SELECT * FROM system_files \
-                     WHERE evidence_id = ?1 \
-                     AND partition_id = ?2;",
-            )
-            .bind(evidence_id)
-            .bind(partition_id)
-            .fetch_all(pool)
-            .await;
-
-            let au_file_paths = match au_file_paths_res {
-                Ok(files) => files.into_iter().filter(|f| rx.is_match(&f.absolute_path)).collect::<Vec<_>>(),
-                Err(e) => {
-                    let msg = format!("Failed to query DB for artifact '{}': {e}", artifact.name);
-                    send_progress(&tx_progress, IndexerEvent {
-                        evidence_id,
-                        event_type: IndexerEventType::Error,
-                        message: msg.clone(),
-                    }).await;
-                    error!("{}", msg);
-                    continue;
+    // Now iterate over all files once and check against all artifacts
+    for file in &all_files {
+        for (artifact, regexes) in &compiled_artifacts {
+            let mut matched = false;
+            for rx in regexes {
+                if rx.is_match(&file.absolute_path) {
+                    matched = true;
+                    break;
                 }
-            };
+            }
 
-            for file in au_file_paths {
-                info!("Found file: {}", file.absolute_path);
+            if matched {
+                info!(
+                    "Artifact matched ({}): {}",
+                    artifact.name, file.absolute_path
+                );
                 if let Err(err) = sqlx::query(stmt)
                     .bind(evidence_id)
                     .bind(file.id.unwrap_or(0) as i64)
@@ -234,22 +363,30 @@ pub async fn identify_artefacts(
                     .await
                 {
                     let msg = format!("Artifact insertion error: {err:?}");
-                    send_progress(&tx_progress, IndexerEvent {
-                        evidence_id,
-                        event_type: IndexerEventType::Error,
-                        message: msg.clone(),
-                    }).await;
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Error,
+                            message: msg.clone(),
+                        },
+                    )
+                    .await;
                     error!("{}", msg);
                 }
             }
         }
     }
 
-    send_progress(&tx_progress, IndexerEvent {
-        evidence_id,
-        event_type: IndexerEventType::Success,
-        message: "Artefact identification complete.".to_string(),
-    }).await;
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Success,
+            message: "Artefact identification complete.".to_string(),
+        },
+    )
+    .await;
 }
 
 fn extract_artefact<F: Filesystem>(
@@ -292,14 +429,19 @@ pub async fn extract_artefacts<F: Filesystem>(
     fs: &mut F,
     registry: &ParserRegistry,
     tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
 ) where
     F::FileType: FileCommon,
 {
-    send_progress(&tx_progress, IndexerEvent {
-        evidence_id,
-        event_type: IndexerEventType::Info,
-        message: "Starting artefact extraction…".to_string(),
-    }).await;
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Info,
+            message: "Starting artefact extraction…".to_string(),
+        },
+    )
+    .await;
 
     // Pull artefacts that specify a parser, joined to system_files to recover the FS identifier.
     let rows_res = sqlx::query(
@@ -329,22 +471,30 @@ pub async fn extract_artefacts<F: Filesystem>(
         Ok(r) => r,
         Err(e) => {
             let msg = format!("Failed to list artefacts to extract: {e:?}");
-            send_progress(&tx_progress, IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            }).await;
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Error,
+                    message: msg.clone(),
+                },
+            )
+            .await;
             error!("{}", msg);
             return;
         }
     };
 
     if rows.is_empty() {
-        send_progress(&tx_progress, IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Success,
-            message: "No artefacts with a parser to extract.".to_string(),
-        }).await;
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Success,
+                message: "No artefacts with a parser to extract.".to_string(),
+            },
+        )
+        .await;
         return;
     }
 
@@ -355,11 +505,15 @@ pub async fn extract_artefacts<F: Filesystem>(
         Ok(t) => t,
         Err(e) => {
             let msg = format!("Could not open DB transaction for extraction: {e:?}");
-            send_progress(&tx_progress, IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            }).await;
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Error,
+                    message: msg.clone(),
+                },
+            )
+            .await;
             error!("{}", msg);
             return;
         }
@@ -369,28 +523,41 @@ pub async fn extract_artefacts<F: Filesystem>(
     let mut emitted_objects = 0u64;
 
     for row in rows {
+        if let Some(token) = &cancel_token {
+            if token.load(Ordering::Relaxed) {
+                // Abort processing but keep what hasn't been reverted
+                break;
+            }
+        }
+
         processed_files += 1;
 
         let artifact_id: i64 = row.get("artifact_id");
         let file_id: Option<i64> = row.get("file_id");
         let parser_name: String = row.get("parser_name");
+        let parser_name = parser_name.trim();
         let fs_identifier_i64: i64 = row.get("fs_identifier");
         let abs_path: String = row.get("absolute_path");
 
-        let parser_opt = registry.get(parser_name.as_str());
-        
+        let parser_opt = registry.get(parser_name);
+
         let parser = match parser_opt {
             Some(p) => p,
             None => {
+                let available_parsers: Vec<&str> = registry.keys().cloned().collect();
                 let msg = format!(
-                    "Artefact '{}' references unknown parser '{}' (file: {})",
-                    artifact_id, parser_name, abs_path
+                    "Artefact '{}' references unknown parser '{}' (file: {}). Available parsers: {:?}",
+                    artifact_id, parser_name, abs_path, available_parsers
                 );
-                send_progress(&tx_progress, IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                }).await;
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Error,
+                        message: msg.clone(),
+                    },
+                )
+                .await;
                 error!("{}", msg);
                 continue;
             }
@@ -403,11 +570,15 @@ pub async fn extract_artefacts<F: Filesystem>(
                     "Extraction failed (parser={}, file={}): {e:?}",
                     parser_name, abs_path
                 );
-                send_progress(&tx_progress, IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                }).await;
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Error,
+                        message: msg.clone(),
+                    },
+                )
+                .await;
                 error!("{}", msg);
                 continue;
             }
@@ -442,11 +613,15 @@ pub async fn extract_artefacts<F: Filesystem>(
             .await
             {
                 let msg = format!("DB insert error for parsed object: {e:?}");
-                send_progress(&tx_progress, IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                }).await;
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Error,
+                        message: msg.clone(),
+                    },
+                )
+                .await;
                 error!("{}", msg);
             }
         }
@@ -454,7 +629,7 @@ pub async fn extract_artefacts<F: Filesystem>(
         if processed_files % 50 == 0 || processed_files == total {
             send_progress(&tx_progress, IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Info,
+                event_type: IndexerEventType::Progress { current: processed_files, total },
                 message: format!(
                     "Artefact extraction: {processed_files}/{total} files, {emitted_objects} objects emitted…"
                 ),
@@ -464,22 +639,30 @@ pub async fn extract_artefacts<F: Filesystem>(
 
     if let Err(e) = tx.commit().await {
         let msg = format!("Extraction commit error: {e:?}");
-        send_progress(&tx_progress, IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Error,
-            message: msg.clone(),
-        }).await;
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Error,
+                message: msg.clone(),
+            },
+        )
+        .await;
         error!("{}", msg);
         return;
     }
 
-    send_progress(&tx_progress, IndexerEvent {
-        evidence_id,
-        event_type: IndexerEventType::Success,
-        message: format!(
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Success,
+            message: format!(
             "Artefact extraction done: processed {total} files, emitted {emitted_objects} objects."
         ),
-    }).await;
+        },
+    )
+    .await;
 
     info!(
         "Artefact extraction done evidence_id={evidence_id} partition_id={partition_id}: \

@@ -6,7 +6,6 @@ artifacts:
       - "/var/log/messages"
       - "/var/log/kern.log"
       - "/var/log/daemon.log"
-    parser: "syslog"
     tag: "logs"
     category: "system"
 
@@ -15,7 +14,6 @@ artifacts:
     paths:
       - "/var/log/journal"
       - "/run/log/journal"
-    parser: "systemd_journal"
     tag: "logs"
     category: "system"
 
@@ -23,7 +21,6 @@ artifacts:
     description: "Boot-time and runtime kernel messages captured by dmesg"
     paths:
       - "/var/log/dmesg"
-    parser: "kernel_ring_buffer"
     tag: "logs"
     category: "system"
 
@@ -31,7 +28,6 @@ artifacts:
     description: "Boot process messages"
     paths:
       - "/var/log/boot.log"
-    parser: "bootlog"
     tag: "logs"
     category: "system"
 
@@ -40,7 +36,6 @@ artifacts:
     paths:
       - "/boot/grub/grub.cfg"
       - "/boot/grub2/grub.cfg"
-    parser: "grub_cfg"
     tag: "boot"
     category: "system"
 
@@ -48,7 +43,6 @@ artifacts:
     description: "Static filesystem mount definitions"
     paths:
       - "/etc/fstab"
-    parser: "fstab"
     tag: "config"
     category: "system"
 
@@ -56,7 +50,6 @@ artifacts:
     description: "Snapshot of current mounts"
     paths:
       - "/proc/mounts"
-    parser: "mounts"
     tag: "state"
     category: "system"
 
@@ -64,7 +57,6 @@ artifacts:
     description: "Package operations performed with dpkg"
     paths:
       - "/var/log/dpkg.log"
-    parser: "dpkg_log"
     tag: "packages"
     category: "system"
 
@@ -73,7 +65,6 @@ artifacts:
     paths:
       - "/var/log/apt/history.log"
       - "/var/log/apt/term.log"
-    parser: "apt_history"
     tag: "packages"
     category: "system"
 
@@ -81,7 +72,6 @@ artifacts:
     description: "Package-manager transactions on RHEL-based systems"
     paths:
       - "/var/log/yum.log"
-    parser: "yum_log"
     tag: "packages"
     category: "system"
 
@@ -89,7 +79,6 @@ artifacts:
     description: "Package-manager transactions on modern Fedora/RHEL systems"
     paths:
       - "/var/log/dnf.log"
-    parser: "dnf_log"
     tag: "packages"
     category: "system"
 
@@ -97,7 +86,6 @@ artifacts:
     description: "Arch-based package-manager transactions"
     paths:
       - "/var/log/pacman.log"
-    parser: "pacman_log"
     tag: "packages"
     category: "system"
 
@@ -105,7 +93,6 @@ artifacts:
     description: "Ubuntu Uncomplicated Firewall events"
     paths:
       - "/var/log/ufw.log"
-    parser: "ufw_log"
     tag: "logs"
     category: "network"
 
@@ -113,7 +100,6 @@ artifacts:
     description: "OpenSSH daemon configuration"
     paths:
       - "/etc/ssh/sshd_config"
-    parser: "ssh_config"
     tag: "config"
     category: "network"
 
@@ -121,7 +107,6 @@ artifacts:
     description: "System-wide OpenSSH client configuration"
     paths:
       - "/etc/ssh/ssh_config"
-    parser: "ssh_config"
     tag: "config"
     category: "network"
 
@@ -129,7 +114,6 @@ artifacts:
     description: "Known host fingerprints for automated trust decisions"
     paths:
       - "/etc/ssh/ssh_known_hosts"
-    parser: "ssh_known_hosts"
     tag: "config"
     category: "network"
 
@@ -137,7 +121,6 @@ artifacts:
     description: "DNS resolver settings"
     paths:
       - "/etc/resolv.conf"
-    parser: "resolv_conf"
     tag: "config"
     category: "network"
 
@@ -145,7 +128,6 @@ artifacts:
     description: "Static hostname mappings"
     paths:
       - "/etc/hosts"
-    parser: "hosts_file"
     tag: "config"
     category: "network"
 
@@ -153,7 +135,6 @@ artifacts:
     description: "Legacy Debian network-interfaces configuration"
     paths:
       - "/etc/network/interfaces"
-    parser: "interfaces_file"
     tag: "config"
     category: "network"
 
@@ -161,7 +142,6 @@ artifacts:
     description: "Red Hat network-scripts interface configuration"
     paths:
       - "/etc/sysconfig/network-scripts/ifcfg-eth0"
-    parser: "interfaces_file"
     tag: "config"
     category: "network"
 
@@ -169,7 +149,6 @@ artifacts:
     description: "Modern Ubuntu network configuration"
     paths:
       - "/etc/netplan"
-    parser: "netplan_yaml"
     tag: "config"
     category: "network"
 
@@ -177,7 +156,6 @@ artifacts:
     description: "Local user-account definitions"
     paths:
       - "/etc/passwd"
-    parser: "passwd"
     tag: "accounts"
     category: "users"
 
@@ -185,7 +163,6 @@ artifacts:
     description: "Password hashes and aging information"
     paths:
       - "/etc/shadow"
-    parser: "shadow"
     tag: "accounts"
     category: "users"
 
@@ -193,7 +170,6 @@ artifacts:
     description: "Local group definitions"
     paths:
       - "/etc/group"
-    parser: "group"
     tag: "accounts"
     category: "users"
 
@@ -201,7 +177,6 @@ artifacts:
     description: "Secure group-membership information"
     paths:
       - "/etc/gshadow"
-    parser: "gshadow"
     tag: "accounts"
     category: "users"
 
@@ -209,7 +184,6 @@ artifacts:
     description: "Privilege-escalation configuration"
     paths:
       - "/etc/sudoers"
-    parser: "sudoers"
     tag: "config"
     category: "users"
 
@@ -219,7 +193,6 @@ artifacts:
       - "/var/log/wtmp"
       - "/var/log/btmp"
       - "/var/run/utmp"
-    parser: "wtmp_btmp_utmp"
     tag: "logs"
     category: "users"
 
@@ -227,7 +200,6 @@ artifacts:
     description: "Binary record of the last login for each user"
     paths:
       - "/var/log/lastlog"
-    parser: "lastlog"
     tag: "logs"
     category: "users"
 
@@ -235,7 +207,6 @@ artifacts:
     description: "Command history for the root account"
     paths:
       - "/root/.bash_history"
-    parser: "history_bash"
     tag: "history"
     category: "users"
 
@@ -243,7 +214,6 @@ artifacts:
     description: "Z-shell command history for the root account"
     paths:
       - "/root/.zsh_history"
-    parser: "history_zsh"
     tag: "history"
     category: "users"
 
@@ -251,7 +221,6 @@ artifacts:
     description: "Primary system-wide scheduled tasks"
     paths:
       - "/etc/crontab"
-    parser: "cron_tab"
     tag: "jobs"
     category: "system"
 
@@ -259,7 +228,6 @@ artifacts:
     description: "Inbound HTTP requests to Apache HTTP Server"
     paths:
       - "/var/log/apache2/access.log"
-    parser: "apache_access"
     tag: "logs"
     category: "application"
 
@@ -267,7 +235,6 @@ artifacts:
     description: "Error messages from Apache HTTP Server"
     paths:
       - "/var/log/apache2/error.log"
-    parser: "apache_error"
     tag: "logs"
     category: "application"
 
@@ -275,7 +242,6 @@ artifacts:
     description: "Inbound HTTP requests to Apache HTTP Server"
     paths:
       - "/etc/httpd/logs/access_log"
-    parser: "apache_access"
     tag: "logs"
     category: "application"
 
@@ -283,7 +249,6 @@ artifacts:
     description: "Error messages from Apache HTTP Server"
     paths:
       - "/etc/httpd/logs/error_log"
-    parser: "apache_error"
     tag: "logs"
     category: "application"
 
@@ -291,7 +256,6 @@ artifacts:
     description: "Inbound HTTP requests handled by NGINX"
     paths:
       - "/var/log/nginx/access.log"
-    parser: "nginx_access"
     tag: "logs"
     category: "application"
 
@@ -299,7 +263,6 @@ artifacts:
     description: "Error messages produced by NGINX"
     paths:
       - "/var/log/nginx/error.log"
-    parser: "nginx_error"
     tag: "logs"
     category: "application"
 
@@ -307,7 +270,6 @@ artifacts:
     description: "Default JSON logs emitted by Docker containers"
     paths:
       - "/var/lib/docker/containers"
-    parser: "docker_json_log"
     tag: "logs"
     category: "application"
 
@@ -335,7 +297,6 @@ artifacts:
     description: "Packet-level inbound/outbound traffic allowed/blocked by the built-in firewall"
     paths:
       - '\Windows\System32\LogFiles\Firewall\pfirewall.log'
-    parser: "firewall_log"
     tag: "network"
     category: "network"
 
@@ -343,7 +304,6 @@ artifacts:
     description: "PF files evidencing program execution times and frequency"
     paths:
       - '\Windows\Prefetch\[^.]+\.pf'
-    parser: "prefetch"
     tag: "execution"
     category: "system"
 
@@ -351,7 +311,6 @@ artifacts:
     description: "Application compatibility cache embedded in the SYSTEM hive; shows executable launch evidence"
     paths:
       - '\Windows\System32\config\SYSTEM'
-    parser: "shimcache"
     tag: "registry"
     category: "system"
 
@@ -359,7 +318,6 @@ artifacts:
     description: "Comprehensive executed-file inventory stored by the Application Compatibility feature"
     paths:
       - '\Windows\AppCompat\Programs\Amcache.hve'
-    parser: "amcache"
     tag: "registry"
     category: "system"
 
@@ -367,7 +325,6 @@ artifacts:
     description: "System Resource Usage Monitor (SRUDB.dat) – per-app network & energy usage"
     paths:
       - '\Windows\System32\SRU\SRUDB.dat'
-    parser: "srum"
     tag: "usage"
     category: "network"
 
@@ -375,7 +332,6 @@ artifacts:
     description: "NTFS change journal recording file creation, deletion and modification events"
     paths:
       - '\$Extend\$UsnJrnl'
-    parser: "usnjrnl"
     tag: "filesystem"
     category: "system"
 
@@ -383,7 +339,6 @@ artifacts:
     description: "Core NTFS metadata file containing every record for files and directories"
     paths:
       - '\$MFT'
-    parser: "mft"
     tag: "filesystem"
     category: "system"
 
@@ -391,7 +346,6 @@ artifacts:
     description: "Volatile memory pages swapped to disk; useful for strings-of-interest carving"
     paths:
       - '\pagefile.sys'
-    parser: "memory_swap"
     tag: "memory"
     category: "system"
 
@@ -399,7 +353,6 @@ artifacts:
     description: "Memory snapshot written on hibernate; contains entire physical memory image"
     paths:
       - '\hiberfil.sys'
-    parser: "hibernation"
     tag: "memory"
     category: "system"
 
@@ -407,7 +360,6 @@ artifacts:
     description: "Per-user registry hive containing Run keys, typed URLs, recent docs, etc."
     paths:
       - '\Users\[^\\]+\\NTUSER\.DAT'
-    parser: "registry_hive"
     tag: "registry"
     category: "users"
 
@@ -415,7 +367,6 @@ artifacts:
     description: "Per-user hive with ShellBags, JumpList destinations and other shell artefacts"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Windows\\UsrClass\.dat'
-    parser: "registry_hive"
     tag: "registry"
     category: "users"
 
@@ -423,7 +374,6 @@ artifacts:
     description: "Per-application automatic JumpLists showing recently accessed files"
     paths:
       - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\[^\\]+\.automaticDestinations-ms'
-    parser: "jumplist"
     tag: "user_activity"
     category: "users"
 
@@ -431,7 +381,6 @@ artifacts:
     description: "Shortcut files revealing file launches/open operations"
     paths:
       - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\Recent Items\\[^\\]+\.lnk'
-    parser: "lnk"
     tag: "user_activity"
     category: "users"
 
@@ -439,7 +388,6 @@ artifacts:
     description: "SQLite database of visited URLs and download entries for Google Chrome"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History'
-    parser: "chrome_history"
     tag: "browser"
     category: "users"
 
@@ -447,7 +395,6 @@ artifacts:
     description: "Chromium-based Microsoft Edge visit history"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History'
-    parser: "edge_history"
     tag: "browser"
     category: "users"
 
@@ -455,7 +402,6 @@ artifacts:
     description: "Visited pages and download data for Mozilla Firefox"
     paths:
       - '\Users\[^\\]+\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\[^\\]+\\places\.sqlite'
-    parser: "firefox_history"
     tag: "browser"
     category: "users"
 
@@ -463,7 +409,6 @@ artifacts:
     description: "Plain-text command history captured by PSReadLine for each user"
     paths:
       - '\Users\[^\\]+\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history\.txt'
-    parser: "powershell_history"
     tag: "execution"
     category: "users"
 
@@ -471,7 +416,6 @@ artifacts:
     description: "XML files defining one-off and recurring tasks (common persistence mechanism)"
     paths:
       - '\Windows\System32\Tasks\\.*'
-    parser: "scheduled_tasks"
     tag: "persistence"
     category: "system"
 
@@ -479,7 +423,6 @@ artifacts:
     description: "Autostart entries under HKLM/HKCU captured via SOFTWARE hive"
     paths:
       - '\Windows\System32\config\SOFTWARE'
-    parser: "registry_run"
     tag: "persistence"
     category: "system"
 
@@ -487,7 +430,6 @@ artifacts:
     description: "Compiled provider database – inspect for malicious permanent event subscriptions"
     paths:
       - '\Windows\System32\wbem\Repository\OBJECTS\.DATA'
-    parser: "wmi_repository"
     tag: "persistence"
     category: "system"
 
@@ -495,7 +437,6 @@ artifacts:
     description: "Anti-malware scan and detection activity"
     paths:
       - '\ProgramData\Microsoft\Windows Defender\Support\\.*\.log'
-    parser: "defender_log"
     tag: "security"
     category: "system"
 
@@ -511,7 +452,6 @@ artifacts:
     description: "Deleted-file metadata (.$I) holding original path & deletion time"
     paths:
       - '\$Recycle\.Bin\[^\\]+\\\$I[^\\]+'
-    parser: "recycle_bin"
     tag: "filesystem"
     category: "users"
 
@@ -519,7 +459,6 @@ artifacts:
     description: "Volume Shadow Copies providing historical file versions"
     paths:
       - '\System Volume Information\\[0-9A-F]+\\'
-    parser: "vss"
     tag: "backup"
     category: "system"
 
@@ -527,7 +466,6 @@ artifacts:
     description: "Background Intelligent Transfer Service queue (often abused for staging)"
     paths:
       - '\ProgramData\Microsoft\Network\Downloader\qmgr\.db'
-    parser: "bits_db"
     tag: "network"
     category: "network"
 
@@ -535,7 +473,6 @@ artifacts:
     description: "Per-site web server access logs (if IIS is installed)"
     paths:
       - '\inetpub\logs\LogFiles\W3SVC[^\\]+\\u_ex[0-9]+\.log'
-    parser: "iis_log"
     tag: "web"
     category: "network"
 
@@ -543,7 +480,6 @@ artifacts:
     description: "Bitmap cache files revealing remote desktop activity"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Terminal Server Client\\Cache\\.*'
-    parser: "rdp_cache"
     tag: "network"
     category: "users"
 
@@ -551,7 +487,6 @@ artifacts:
     description: "Cloud/clipboard ring database for Windows 10+"
     paths:
       - '\Windows\ServiceProfiles\LocalService\AppData\Local\Microsoft\Windows\Clipboard\\.*'
-    parser: "clipboard_cache"
     tag: "user"
     category: "users"
 
@@ -559,7 +494,6 @@ artifacts:
     description: "Per-day DHCP lease logs (on servers or workstations with service enabled)"
     paths:
       - '\Windows\System32\dhcp\DhcpSrvLog-.*\.log'
-    parser: "dhcp_log"
     tag: "network"
     category: "network"
 
@@ -567,7 +501,6 @@ artifacts:
     description: "Raw spool files holding printed document content"
     paths:
       - '\Windows\System32\spool\PRINTERS\\.*\.spl'
-    parser: "print_spool"
     tag: "device"
     category: "system"
 
@@ -575,7 +508,6 @@ artifacts:
     description: "Crash reports and application error diagnostics"
     paths:
       - '\ProgramData\Microsoft\Windows\WER\ReportQueue\\.*'
-    parser: "wer"
     tag: "logs"
     category: "system"
 
@@ -583,7 +515,6 @@ artifacts:
     description: "Domain logon negotiation and trust events – useful in lateral-movement investigations"
     paths:
       - '\Windows\System32\LogFiles\NetLogon\NetLogon\.log'
-    parser: "netlogon"
     tag: "logs"
     category: "network"
 
@@ -602,7 +533,6 @@ artifacts:
       # Matches e.g. C:\Users\Alice\NTUSER.DAT, C:\Users\Bob\NTUSER.DAT
       - path: 'C:\\Users\\[^\\]+\\NTUSER\.DAT'
         regexp: true
-    parser: "registry_ntuser"
     tag: "registry"
     category: "users"
 
@@ -615,7 +545,6 @@ artifacts:
       # Any profile (Profile 1, Profile 2, etc.)
       - path: 'C:\\Users\\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Profile [0-9]+\\History'
         regexp: true
-    parser: "chrome_history"
     tag: "browser"
     category: "application"
 
@@ -628,7 +557,6 @@ artifacts:
         regexp: true
       - path: '.*\.s3db$'
         regexp: true
-    parser: "sqlite"
     tag: "database"
     category: "system"
 
@@ -657,7 +585,6 @@ artifacts:
     paths:
       - "/var/log/auth.log"
       - "/var/log/secure"
-    parser: "linux_auth_log"
     tag: "logs"
     category: "users"
 
@@ -667,7 +594,6 @@ artifacts:
       - "/var/log/audit/audit.log"
       - path: '^/var/log/audit/audit\.log\.[0-9]+$'
         regexp: true
-    parser: "linux_auditd"
     tag: "security"
     category: "system"
 
@@ -676,7 +602,6 @@ artifacts:
     paths:
       - "/var/log/faillog"
       - "/var/log/tallylog"
-    parser: "linux_login_failures"
     tag: "logs"
     category: "users"
 
@@ -685,7 +610,6 @@ artifacts:
     paths:
       - path: '^/var/log/(syslog|messages|auth\.log|secure)(\.[0-9]+)?(\.gz)?$'
         regexp: true
-    parser: "syslog"
     tag: "logs"
     category: "system"
 
@@ -693,7 +617,6 @@ artifacts:
     description: "Dedicated sudo command execution log where configured"
     paths:
       - "/var/log/sudo.log"
-    parser: "sudo_log"
     tag: "logs"
     category: "users"
 
@@ -706,7 +629,6 @@ artifacts:
         regexp: true
       - path: '^/root/\.(bash_history|zsh_history)$'
         regexp: true
-    parser: "linux_shell_history"
     tag: "history"
     category: "users"
 
@@ -719,7 +641,6 @@ artifacts:
         regexp: true
       - path: '^/root/\.ssh/(authorized_keys|known_hosts|config)$'
         regexp: true
-    parser: "linux_ssh_user_artifacts"
     tag: "network"
     category: "users"
 
@@ -733,7 +654,6 @@ artifacts:
       - path: "^/var/spool/cron/[^/]+$"
         regexp: true
       - "/etc/anacrontab"
-    parser: "linux_cron"
     tag: "jobs"
     category: "system"
 
@@ -744,7 +664,6 @@ artifacts:
         regexp: true
       - path: "^/var/spool/cron/atjobs/.*$"
         regexp: true
-    parser: "linux_at_jobs"
     tag: "jobs"
     category: "system"
 
@@ -755,7 +674,6 @@ artifacts:
         regexp: true
       - path: '^/(usr/lib|lib)/systemd/system/.*\.(service|timer|socket|mount|path)$'
         regexp: true
-    parser: "systemd_unit_files"
     tag: "config"
     category: "system"
 
@@ -765,7 +683,6 @@ artifacts:
       - "/etc/rc.local"
       - path: '^/etc/init\.d/.*$'
         regexp: true
-    parser: "linux_init_scripts"
     tag: "persistence"
     category: "system"
 
@@ -774,7 +691,6 @@ artifacts:
     paths:
       - path: '^/etc/NetworkManager/system-connections/[^/]+(\.nmconnection)?$'
         regexp: true
-    parser: "networkmanager_profiles"
     tag: "config"
     category: "network"
 
@@ -785,7 +701,6 @@ artifacts:
         regexp: true
       - path: '^/var/lib/NetworkManager/.*\.lease$'
         regexp: true
-    parser: "dhcp_leases"
     tag: "network"
     category: "network"
 
@@ -795,7 +710,6 @@ artifacts:
       - "/etc/iptables/rules.v4"
       - "/etc/iptables/rules.v6"
       - "/etc/nftables.conf"
-    parser: "firewall_config"
     tag: "security"
     category: "network"
 
@@ -806,7 +720,6 @@ artifacts:
         regexp: true
       - path: '^/etc/wireguard/.*\.conf$'
         regexp: true
-    parser: "vpn_config"
     tag: "network"
     category: "network"
 
@@ -817,7 +730,6 @@ artifacts:
         regexp: true
       - path: '^/home/[^/]+/\.config/(google-chrome|chromium|microsoft-edge)/Profile [0-9]+/History$'
         regexp: true
-    parser: "chromium_history_linux"
     tag: "browser"
     category: "users"
 
@@ -826,7 +738,6 @@ artifacts:
     paths:
       - path: '^/home/[^/]+/\.mozilla/firefox/[^/]+/places\.sqlite$'
         regexp: true
-    parser: "firefox_history"
     tag: "browser"
     category: "users"
 
@@ -835,7 +746,6 @@ artifacts:
     paths:
       - path: '^/home/[^/]+/\.local/share/recently-used\.xbel$'
         regexp: true
-    parser: "xbel_recent_files"
     tag: "user_activity"
     category: "users"
 
@@ -844,7 +754,6 @@ artifacts:
     paths:
       - path: '^/home/[^/]+/\.local/share/Trash/info/.*\.trashinfo$'
         regexp: true
-    parser: "trashinfo"
     tag: "filesystem"
     category: "users"
 
@@ -853,7 +762,6 @@ artifacts:
     paths:
       - path: '^/home/[^/]+/\.cache/thumbnails/.*$'
         regexp: true
-    parser: "thumbnail_cache"
     tag: "media"
     category: "media"
 
@@ -862,7 +770,6 @@ artifacts:
     paths:
       - path: "^/(run|var/lib)/udev/data/.*$"
         regexp: true
-    parser: "udev_data"
     tag: "device"
     category: "system"
 
@@ -870,7 +777,6 @@ artifacts:
     description: "Installed package inventory and state on Debian-based systems"
     paths:
       - "/var/lib/dpkg/status"
-    parser: "dpkg_status"
     tag: "packages"
     category: "system"
 
@@ -878,7 +784,6 @@ artifacts:
     description: "Installed package metadata on RPM-based systems"
     paths:
       - "/var/lib/rpm/Packages"
-    parser: "rpm_db"
     tag: "packages"
     category: "system"
 
@@ -887,7 +792,6 @@ artifacts:
     paths:
       - "/var/log/mail.log"
       - "/var/log/maillog"
-    parser: "mail_log"
     tag: "logs"
     category: "network"
 
@@ -900,7 +804,6 @@ artifacts:
         regexp: true
       - path: "^/private/var/db/uuidtext/.*$"
         regexp: true
-    parser: "macos_unified_log"
     tag: "logs"
     category: "system"
 
@@ -909,7 +812,6 @@ artifacts:
     paths:
       - path: '^/private/var/log/asl/.*\.asl$'
         regexp: true
-    parser: "macos_asl"
     tag: "logs"
     category: "system"
 
@@ -918,7 +820,6 @@ artifacts:
     paths:
       - "/private/var/log/system.log"
       - "/private/var/log/install.log"
-    parser: "macos_syslog"
     tag: "logs"
     category: "system"
 
@@ -929,7 +830,6 @@ artifacts:
         regexp: true
       - path: '^/Volumes/[^/]+/\.fseventsd/.*$'
         regexp: true
-    parser: "macos_fsevents"
     tag: "filesystem"
     category: "system"
 
@@ -940,7 +840,6 @@ artifacts:
         regexp: true
       - path: '^/(System/Library|Library)/LaunchAgents/.*\.plist$'
         regexp: true
-    parser: "macos_launchd_plist"
     tag: "persistence"
     category: "system"
 
@@ -949,7 +848,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/LaunchAgents/.*\.plist$'
         regexp: true
-    parser: "macos_launchd_plist"
     tag: "persistence"
     category: "users"
 
@@ -961,7 +859,6 @@ artifacts:
         regexp: true
       - path: "^/private/var/at/jobs/.*$"
         regexp: true
-    parser: "macos_cron"
     tag: "jobs"
     category: "system"
 
@@ -972,7 +869,6 @@ artifacts:
         regexp: true
       - path: '^/private/var/db/dslocal/nodes/Default/groups/[^/]+\.plist$'
         regexp: true
-    parser: "macos_dslocal"
     tag: "accounts"
     category: "users"
 
@@ -983,7 +879,6 @@ artifacts:
         regexp: true
       - path: '^/Users/[^/]+/\.zsh_sessions/.*\.history$'
         regexp: true
-    parser: "macos_shell_history"
     tag: "history"
     category: "users"
 
@@ -994,7 +889,6 @@ artifacts:
         regexp: true
       - path: '^/Users/[^/]+/\.ssh/id_[^/]+$'
         regexp: true
-    parser: "ssh_user_files"
     tag: "network"
     category: "users"
 
@@ -1004,7 +898,6 @@ artifacts:
       - "/Library/Preferences/com.apple.loginwindow.plist"
       - path: '^/Users/[^/]+/Library/Preferences/com.apple.loginwindow\.plist$'
         regexp: true
-    parser: "plist"
     tag: "config"
     category: "users"
 
@@ -1014,7 +907,6 @@ artifacts:
       - "/Library/Application Support/com.apple.TCC/TCC.db"
       - path: '^/Users/[^/]+/Library/Application Support/com.apple.TCC/TCC\.db$'
         regexp: true
-    parser: "macos_tcc"
     tag: "privacy"
     category: "users"
 
@@ -1023,7 +915,6 @@ artifacts:
     paths:
       - path: "^/Users/[^/]+/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2$"
         regexp: true
-    parser: "macos_quarantine"
     tag: "security"
     category: "users"
 
@@ -1034,7 +925,6 @@ artifacts:
         regexp: true
       - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/.*$'
         regexp: true
-    parser: "macos_spotlight_store"
     tag: "filesystem"
     category: "system"
 
@@ -1043,7 +933,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/Knowledge/knowledgeC\.db$'
         regexp: true
-    parser: "macos_knowledgec"
     tag: "user_activity"
     category: "users"
 
@@ -1052,7 +941,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Safari/History\.db$'
         regexp: true
-    parser: "safari_history"
     tag: "browser"
     category: "users"
 
@@ -1061,7 +949,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Safari/Downloads\.plist$'
         regexp: true
-    parser: "safari_downloads"
     tag: "browser"
     category: "users"
 
@@ -1072,7 +959,6 @@ artifacts:
         regexp: true
       - path: '^/Users/[^/]+/Library/Safari/LastSession\.plist$'
         regexp: true
-    parser: "safari_plist"
     tag: "browser"
     category: "users"
 
@@ -1083,7 +969,6 @@ artifacts:
         regexp: true
       - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium|Microsoft Edge|BraveSoftware/Brave-Browser)/Profile [0-9]+/History$"
         regexp: true
-    parser: "chromium_history_macos"
     tag: "browser"
     category: "users"
 
@@ -1092,7 +977,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/Firefox/Profiles/[^/]+/places\.sqlite$'
         regexp: true
-    parser: "firefox_history"
     tag: "browser"
     category: "users"
 
@@ -1101,7 +985,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Messages/chat\.db$'
         regexp: true
-    parser: "imessage_chatdb"
     tag: "communications"
     category: "users"
 
@@ -1110,7 +993,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/CallHistoryDB/CallHistory\.storedata$'
         regexp: true
-    parser: "macos_callhistory"
     tag: "communications"
     category: "users"
 
@@ -1119,7 +1001,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/NotificationCenter/.*\.db$'
         regexp: true
-    parser: "macos_notification_db"
     tag: "user_activity"
     category: "users"
 
@@ -1128,7 +1009,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/com.apple.sharedfilelist/.*\.(sfl|sfl2)$'
         regexp: true
-    parser: "macos_sfl"
     tag: "user_activity"
     category: "users"
 
@@ -1137,7 +1017,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Caches/com.apple.QuickLook.thumbnailcache/index\.sqlite$'
         regexp: true
-    parser: "macos_quicklook_thumbnail"
     tag: "media"
     category: "media"
 
@@ -1146,7 +1025,6 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Pictures/Photos Library\.photoslibrary/database/Photos\.sqlite$'
         regexp: true
-    parser: "macos_photos_sqlite"
     tag: "media"
     category: "media"
 
@@ -1157,7 +1035,6 @@ artifacts:
         regexp: true
       - path: '^/Users/[^/]+/Library/Logs/DiagnosticReports/.*\.(crash|ips)$'
         regexp: true
-    parser: "macos_crash_reports"
     tag: "logs"
     category: "application"
 
@@ -1167,7 +1044,6 @@ artifacts:
       - "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist"
       - "/Library/Preferences/SystemConfiguration/preferences.plist"
       - "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"
-    parser: "plist"
     tag: "network"
     category: "network"
 
@@ -1176,7 +1052,6 @@ artifacts:
     paths:
       - path: "^/private/var/db/dhcpclient/leases/.*$"
         regexp: true
-    parser: "macos_dhcp_leases"
     tag: "network"
     category: "network"
 
@@ -1186,9 +1061,236 @@ artifacts:
       - "/etc/pf.conf"
       - path: '^/etc/pf\.anchors/.*$'
         regexp: true
-    parser: "pf_conf"
     tag: "security"
     category: "network"
+
+  # ---------------- Apple iOS / iPadOS Mobile Forensics ----------------
+
+  - name: "iOS SMS and iMessage Database"
+    description: "Primary Messages database containing SMS, MMS and iMessage conversations"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SMS/sms\.db$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Contacts Database"
+    description: "Address book and contact linkage database"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBook\.sqlitedb$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBookImages\.sqlitedb$'
+        regexp: true
+    tag: "contacts"
+    category: "users"
+
+  - name: "iOS Call History Database"
+    description: "Call records for inbound, outbound and missed calls"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CallHistoryDB/CallHistory\.storedata$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Voicemail Database"
+    description: "Voicemail metadata and message state database"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Voicemail/voicemail\.db$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS WhatsApp Databases and Preferences"
+    description: "WhatsApp message store, media references and application preference artefacts"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/ChatStorage\.sqlite(|-shm|-wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite(|-shm|-wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/net\.whatsapp\.WhatsApp\.plist$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/Message/Media/.*$"
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Signal Databases and Preferences"
+    description: "Signal message store, profile data and application preferences"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/Signal\.sqlite(|-shm|-wal)$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/Attachments/.*$"
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/org\.whispersystems\.signal\.plist$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Telegram Databases and Cache"
+    description: "Telegram local message cache, account state and media cache artefacts"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/telegram-data/.*$"
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/postbox/db/db_sqlite(|-shm|-wal)$"
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Documents/tdatabase/.*$"
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/ph\.telegra\.Telegram\.plist$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Facebook Messenger Databases and Preferences"
+    description: "Messenger chat databases, attachment indexes and application preferences"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Documents/threads_db2$"
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Documents/orca2\.db$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Documents/[Mm]essage[r]?/.*$"
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/com\.facebook\.Messenger\.plist$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Notes Databases"
+    description: "Native Apple Notes content and metadata stores"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Notes/notes\.sqlite$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[A-F0-9-]+/NoteStore\.sqlite$'
+        regexp: true
+    tag: "notes"
+    category: "users"
+
+  - name: "iOS Safari History and Browser State"
+    description: "Safari browsing history, tab/session state and recent browsing context"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/History\.db$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/BrowserState\.db$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/SuspendState\.plist$'
+        regexp: true
+    tag: "browser"
+    category: "users"
+
+  - name: "iOS Maps History"
+    description: "Apple Maps search, route and geolocation history"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Maps/History\.mapsdata$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Maps/GeoHistory\.mapsdata$'
+        regexp: true
+    tag: "location"
+    category: "users"
+
+  - name: "iOS KnowledgeC Database"
+    description: "CoreDuet behavioral timeline database for app usage, mobility and user activity"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Application Support/Knowledge/knowledgeC\.db$'
+        regexp: true
+    tag: "user_activity"
+    category: "users"
+
+  - name: "iOS TCC Privacy Database"
+    description: "Privacy permission decisions for applications requesting protected resources"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/TCC/TCC\.db$'
+        regexp: true
+    tag: "privacy"
+    category: "users"
+
+  - name: "iOS Accounts Database"
+    description: "Configured mail, cloud and service account metadata"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Accounts/Accounts3\.sqlite$'
+        regexp: true
+    tag: "accounts"
+    category: "users"
+
+  - name: "iOS Mail Metadata"
+    description: "Apple Mail message index and metadata databases"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Envelope Index(|-shm|-wal)$"
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Protected Index(|-shm|-wal)$"
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "iOS Photos Databases"
+    description: "Photo library metadata, album membership and media relationship databases"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/Photos\.sqlite$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/Photos\.sqlite-wal$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/metadata/DCIM_APPLE\.plist$'
+        regexp: true
+    tag: "media"
+    category: "media"
+
+  - name: "iOS DCIM Media Files"
+    description: "User-generated camera photos and videos stored in the DCIM hierarchy"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Media/DCIM/[^/]+/.*\.(jpg|jpeg|heic|png|mov|mp4|aae)$'
+        regexp: true
+    tag: "media"
+    category: "media"
+
+  - name: "iOS Lockdown and Pairing Records"
+    description: "Device pairing, host trust and lockdown configuration material"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/root/Library/Lockdown/.*$"
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/db/lockdown/.*$"
+        regexp: true
+    tag: "device"
+    category: "system"
+
+  - name: "iOS Wi-Fi Configuration Plists"
+    description: "Known wireless networks and associated configuration/state data"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/preferences/SystemConfiguration/com\.apple\.wifi\.plist$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/preferences/SystemConfiguration/preferences\.plist$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/wireless/Library/Preferences/com\.apple\.wifi\.plist$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "iOS Data Usage Database"
+    description: "Cellular and Wi-Fi per-service network usage accounting"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/wireless/Library/Databases/DataUsage\.sqlite$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "iOS Diagnostics and Crash Logs"
+    description: "Application and system crash reports, panic logs and analytics data"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Logs/CrashReporter/.*\.(ips|panic|plist|log)$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/db/diagnostics/.*$"
+        regexp: true
+    tag: "logs"
+    category: "system"
+
+  - name: "iOS Application State Plists"
+    description: "Application install, frontmost-state and usage metadata plists"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/FrontBoard/applicationState\.db$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SpringBoard/IconState\.plist$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SpringBoard/LastLaunchServicesMap\.plist$'
+        regexp: true
+    tag: "user_activity"
+    category: "application"
 
   # ---------------- Windows Artifacts (Extended) ----------------
 
@@ -1216,7 +1318,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/](SYSTEM|SOFTWARE|SAM|SECURITY|DEFAULT)$'
         regexp: true
-    parser: "registry_hive_windows"
     tag: "registry"
     category: "system"
 
@@ -1225,7 +1326,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]Prefetch[\\/][^\\/]+\.pf$'
         regexp: true
-    parser: "prefetch"
     tag: "execution"
     category: "system"
 
@@ -1234,7 +1334,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
         regexp: true
-    parser: "shimcache"
     tag: "registry"
     category: "system"
 
@@ -1243,7 +1342,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]AppCompat[\\/]Programs[\\/]Amcache\.hve$'
         regexp: true
-    parser: "amcache"
     tag: "registry"
     category: "system"
 
@@ -1252,7 +1350,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]SRU[\\/]SRUDB\.dat$'
         regexp: true
-    parser: "srum"
     tag: "usage"
     category: "network"
 
@@ -1261,7 +1358,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]Tasks[\\/].+$'
         regexp: true
-    parser: "scheduled_tasks"
     tag: "persistence"
     category: "system"
 
@@ -1270,7 +1366,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SOFTWARE$'
         regexp: true
-    parser: "taskcache_registry"
     tag: "persistence"
     category: "system"
 
@@ -1279,7 +1374,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
         regexp: true
-    parser: "bam_dam"
     tag: "execution"
     category: "system"
 
@@ -1288,7 +1382,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]NTUSER\.DAT$'
         regexp: true
-    parser: "userassist"
     tag: "execution"
     category: "users"
 
@@ -1297,7 +1390,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]NTUSER\.DAT$'
         regexp: true
-    parser: "runmru_typedpaths"
     tag: "user_activity"
     category: "users"
 
@@ -1306,7 +1398,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]UsrClass\.dat$'
         regexp: true
-    parser: "shellbags"
     tag: "user_activity"
     category: "users"
 
@@ -1317,7 +1408,6 @@ artifacts:
         regexp: true
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Recent[\\/]CustomDestinations[\\/].*\.customDestinations-ms$'
         regexp: true
-    parser: "jumplist"
     tag: "user_activity"
     category: "users"
 
@@ -1326,7 +1416,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Recent[\\/].*\.lnk$'
         regexp: true
-    parser: "lnk"
     tag: "user_activity"
     category: "users"
 
@@ -1335,7 +1424,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]ConnectedDevicesPlatform[\\/].*[\\/]ActivitiesCache\.db$'
         regexp: true
-    parser: "activitiescache"
     tag: "user_activity"
     category: "users"
 
@@ -1344,7 +1432,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]WebCache[\\/]WebCacheV01\.dat$'
         regexp: true
-    parser: "webcache"
     tag: "browser"
     category: "users"
 
@@ -1355,7 +1442,6 @@ artifacts:
         regexp: true
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/](Google[\\/]Chrome|Microsoft[\\/]Edge)[\\/]User Data[\\/]Profile [0-9]+[\\/]History$'
         regexp: true
-    parser: "chromium_history_windows"
     tag: "browser"
     category: "users"
 
@@ -1364,7 +1450,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Mozilla[\\/]Firefox[\\/]Profiles[\\/][^\\/]+[\\/]places\.sqlite$'
         regexp: true
-    parser: "firefox_history"
     tag: "browser"
     category: "users"
 
@@ -1375,7 +1460,6 @@ artifacts:
         regexp: true
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Microsoft[\\/]Windows[\\/]Start Menu[\\/]Programs[\\/]Startup[\\/].+$'
         regexp: true
-    parser: "startup_items"
     tag: "persistence"
     category: "users"
 
@@ -1384,7 +1468,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SYSTEM$'
         regexp: true
-    parser: "services_registry"
     tag: "persistence"
     category: "system"
 
@@ -1393,7 +1476,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SOFTWARE$'
         regexp: true
-    parser: "ifeo_registry"
     tag: "persistence"
     category: "system"
 
@@ -1402,7 +1484,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]config[\\/]SECURITY$'
         regexp: true
-    parser: "lsa_secrets"
     tag: "security"
     category: "system"
 
@@ -1411,7 +1492,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Wlansvc[\\/]Profiles[\\/]Interfaces[\\/].*\.xml$'
         regexp: true
-    parser: "wlan_profiles"
     tag: "network"
     category: "network"
 
@@ -1420,7 +1500,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]System32[\\/]drivers[\\/]etc[\\/]hosts$'
         regexp: true
-    parser: "hosts_file"
     tag: "config"
     category: "network"
 
@@ -1429,7 +1508,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]\\$LogFile$'
         regexp: true
-    parser: "ntfs_logfile"
     tag: "filesystem"
     category: "system"
 
@@ -1438,7 +1516,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]\\$Extend[\\/]\\$UsnJrnl$'
         regexp: true
-    parser: "usnjrnl"
     tag: "filesystem"
     category: "system"
 
@@ -1447,7 +1524,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]\\$MFT$'
         regexp: true
-    parser: "mft"
     tag: "filesystem"
     category: "system"
 
@@ -1458,7 +1534,6 @@ artifacts:
         regexp: true
       - path: '(?i)^([A-Z]:)?[\\/]\\$Recycle\.Bin[\\/][^\\/]+[\\/]\\$R.*$'
         regexp: true
-    parser: "recycle_bin"
     tag: "filesystem"
     category: "users"
 
@@ -1467,7 +1542,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Search[\\/]Data[\\/]Applications[\\/]Windows[\\/]Windows\.edb$'
         regexp: true
-    parser: "windows_search_edb"
     tag: "database"
     category: "application"
 
@@ -1476,7 +1550,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]Explorer[\\/](thumbcache_[^\\/]+\.db|iconcache_[^\\/]+\.db)$'
         regexp: true
-    parser: "thumbcache"
     tag: "media"
     category: "media"
 
@@ -1485,7 +1558,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]INF[\\/]setupapi\.(dev|app)\.log$'
         regexp: true
-    parser: "setupapi_log"
     tag: "device"
     category: "system"
 
@@ -1494,7 +1566,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Windows[\\/]Logs[\\/]CBS[\\/]CBS\.log$'
         regexp: true
-    parser: "cbs_log"
     tag: "logs"
     category: "system"
 
@@ -1503,7 +1574,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]OneDrive[\\/]logs[\\/].+$'
         regexp: true
-    parser: "onedrive_logs"
     tag: "cloud"
     category: "application"
 
@@ -1512,7 +1582,6 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]Documents[\\/]Default\.rdp$'
         regexp: true
-    parser: "rdp_default"
     tag: "network"
     category: "users"
 
@@ -1521,6 +1590,5 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Windows Defender[\\/]Quarantine[\\/]Entries[\\/].+$'
         regexp: true
-    parser: "defender_quarantine"
     tag: "security"
     category: "system"
