@@ -10,9 +10,12 @@ use exhume_indexer::{
     ensure_evidence_row, ensure_tables, index_folder, index_partition_with_format,
     insert_partition, update_partition, IndexerEvent, IndexerEventType, PartitionKind,
 };
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use std::path::Path;
+use std::ffi::OsString;
+use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
@@ -36,8 +39,7 @@ async fn main() -> Result<()> {
                 .short('d')
                 .long("database")
                 .value_parser(value_parser!(String))
-                .required(true)
-                .help("The SQLite database path used for the index."),
+                .help("The SQLite database path used for the index. Defaults to <body>.sqlite next to the source."),
         )
         .arg(
             Arg::new("format")
@@ -101,6 +103,12 @@ async fn main() -> Result<()> {
                 .help("Optional path to a custom artifacts.yaml file."),
         )
         .arg(
+            Arg::new("no_progress")
+                .long("no-progress")
+                .action(ArgAction::SetTrue)
+                .help("Disable interactive progress bars and print plain progress messages."),
+        )
+        .arg(
             Arg::new("log_level")
                 .short('l')
                 .long("log-level")
@@ -126,7 +134,8 @@ async fn main() -> Result<()> {
     let is_directory = Path::new(&body_path).is_dir();
     let database_path = matches
         .get_one::<String>("database")
-        .expect("required by clap");
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_database_path(&body_path));
     let format = matches
         .get_one::<String>("format")
         .map(String::as_str)
@@ -138,6 +147,7 @@ async fn main() -> Result<()> {
     let size_sectors = matches.get_one::<u64>("size").copied().unwrap_or(0);
     let run_identify_files = matches.get_flag("identify_files");
     let run_extract_artefacts = matches.get_flag("extract_artefacts");
+    let progress_enabled = !matches.get_flag("no_progress") && std::io::stderr().is_terminal();
     let artifacts_yaml_path = matches
         .get_one::<String>("artifacts_yaml")
         .map(String::as_str);
@@ -162,7 +172,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let pool = open_pool(database_path).await?;
+    let pool = open_pool(&database_path).await?;
     ensure_tables(&pool).await?;
     ensure_evidence_row(&pool, evidence_id, &body_path, is_directory).await?;
 
@@ -202,7 +212,7 @@ async fn main() -> Result<()> {
     }
 
     let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
-    let monitor = tokio::spawn(progress_monitor(rx));
+    let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
 
     let index_result = if is_directory {
         index_folder(
@@ -247,7 +257,7 @@ async fn main() -> Result<()> {
 
         if run_identify_files {
             let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
-            let monitor = tokio::spawn(progress_monitor(rx));
+            let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
             identify_file_types(&mut fs, evidence_id, partition_id, &pool, Some(tx.clone())).await;
             drop(tx);
             let _ = monitor.await;
@@ -257,7 +267,7 @@ async fn main() -> Result<()> {
             let registry = build_registry();
 
             let (tx1, rx1) = mpsc::channel::<IndexerEvent>(100);
-            let monitor1 = tokio::spawn(progress_monitor(rx1));
+            let monitor1 = tokio::spawn(progress_monitor(rx1, progress_enabled));
             identify_artefacts(
                 evidence_id,
                 partition_id,
@@ -270,7 +280,7 @@ async fn main() -> Result<()> {
             let _ = monitor1.await;
 
             let (tx2, rx2) = mpsc::channel::<IndexerEvent>(100);
-            let monitor2 = tokio::spawn(progress_monitor(rx2));
+            let monitor2 = tokio::spawn(progress_monitor(rx2, progress_enabled));
             extract_artefacts(
                 evidence_id,
                 partition_id,
@@ -289,9 +299,21 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn open_pool(path: &str) -> Result<SqlitePool> {
+fn default_database_path(body_path: &str) -> PathBuf {
+    let path = Path::new(body_path);
+    let file_name = path.file_name().unwrap_or_else(|| path.as_os_str());
+    let mut database_name = OsString::from(file_name);
+    database_name.push(".sqlite");
+
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(|parent| parent.join(&database_name))
+        .unwrap_or_else(|| PathBuf::from(database_name))
+}
+
+async fn open_pool(path: &Path) -> Result<SqlitePool> {
     let opts = SqliteConnectOptions::new()
-        .filename(Path::new(path))
+        .filename(path)
         .create_if_missing(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
@@ -401,7 +423,54 @@ fn parse_key_material(fvek_hex: Option<&str>) -> Result<Option<KeyMaterial>> {
     }
 }
 
-async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>) {
+async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>, progress_enabled: bool) {
+    if !progress_enabled {
+        plain_progress_monitor(&mut rx).await;
+        return;
+    }
+
+    let multi = MultiProgress::new();
+    let bar = multi.add(ProgressBar::new_spinner());
+    bar.set_style(spinner_style());
+    bar.enable_steady_tick(Duration::from_millis(120));
+
+    while let Some(event) = rx.recv().await {
+        match event.event_type {
+            IndexerEventType::Info => {
+                bar.set_style(spinner_style());
+                bar.set_message(event.message);
+            }
+            IndexerEventType::Progress { current, total } => {
+                if total == 0 {
+                    bar.set_style(spinner_style());
+                    bar.set_message(event.message);
+                } else {
+                    if bar.length() != Some(total) {
+                        bar.set_style(progress_style());
+                        bar.set_length(total);
+                    }
+                    bar.set_position(current.min(total));
+                    bar.set_message(event.message);
+                }
+            }
+            IndexerEventType::Success => {
+                bar.finish_with_message(event.message);
+            }
+            IndexerEventType::Warning => {
+                bar.println(format!("[WARNING] {}", event.message));
+            }
+            IndexerEventType::Error => {
+                bar.abandon_with_message(event.message);
+            }
+        }
+    }
+
+    if !bar.is_finished() {
+        bar.finish_and_clear();
+    }
+}
+
+async fn plain_progress_monitor(rx: &mut mpsc::Receiver<IndexerEvent>) {
     while let Some(event) = rx.recv().await {
         match event.event_type {
             IndexerEventType::Info => eprintln!("[INFO] {}", event.message),
@@ -413,4 +482,16 @@ async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>) {
             IndexerEventType::Error => eprintln!("[ERROR] {}", event.message),
         }
     }
+}
+
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg}").expect("spinner template should be valid")
+}
+
+fn progress_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+    )
+    .expect("progress template should be valid")
+    .progress_chars("=> ")
 }

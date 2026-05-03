@@ -1292,6 +1292,306 @@ artifacts:
     tag: "user_activity"
     category: "application"
 
+  # ---------------- Android Artifacts ----------------
+
+  - name: "Android SMS and MMS Database"
+    description: "Primary telephony message store containing SMS and MMS conversation content and metadata"
+    paths:
+      - "/data/data/com.android.providers.telephony/databases/mmssms.db"
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Telephony Database"
+    description: "Carrier, SIM and subscription metadata including IMSI and ICCID records"
+    paths:
+      - "/data/data/com.android.providers.telephony/databases/telephony.db"
+    tag: "communications"
+    category: "system"
+
+  - name: "Android Contacts and Call Log Database"
+    description: "Contact records and full call history (CallLog table) managed by the contacts provider"
+    paths:
+      - "/data/data/com.android.providers.contacts/databases/contacts2.db"
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Calendar Database"
+    description: "Calendar events, reminders and attendee records from the calendar provider"
+    paths:
+      - "/data/data/com.android.providers.calendar/databases/calendar.db"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Android Media Store Database"
+    description: "Indexed media metadata for images, audio and video on internal and external storage"
+    paths:
+      - "/data/data/com.android.providers.media/databases/external.db"
+      - "/data/data/com.android.providers.media/databases/internal.db"
+    tag: "media"
+    category: "media"
+
+  - name: "Android Downloads Database"
+    description: "Download manager records including source URLs, destination paths and completion state"
+    paths:
+      - "/data/data/com.android.providers.downloads/databases/downloads.db"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Android Settings Database"
+    description: "System and per-user preference key-value pairs managed by the settings provider"
+    paths:
+      - "/data/data/com.android.providers.settings/databases/settings.db"
+    tag: "config"
+    category: "system"
+
+  - name: "Android Installed Package List"
+    description: "Installed application manifests with permissions, signing certificates and data paths"
+    paths:
+      - "/data/system/packages.xml"
+    tag: "packages"
+    category: "system"
+
+  - name: "Android Accounts Database"
+    description: "Configured Google and third-party account credentials and auth tokens (FBE partition)"
+    paths:
+      - "/data/system_de/0/accounts.db"
+      - "/data/system/accounts.db"
+    tag: "accounts"
+    category: "users"
+
+  - name: "Android Google Services Framework Database"
+    description: "Google account identifiers and GCM/FCM push-notification registration records"
+    paths:
+      - "/data/data/com.google.android.gsf/databases/gservices.db"
+    tag: "accounts"
+    category: "system"
+
+  - name: "Android Wi-Fi Configuration Store"
+    description: "Saved wireless network profiles including SSIDs, PSKs and EAP configuration"
+    paths:
+      - "/data/misc/wifi/WifiConfigStore.xml"
+      - "/data/misc/wifi/wpa_supplicant.conf"
+    tag: "network"
+    category: "network"
+
+  - name: "Android DHCP Lease Records"
+    description: "Per-interface DHCP lease files recording assigned IP, gateway and DNS details"
+    paths:
+      - path: '^/data/misc/dhcp/dhcpcd-.*\.lease$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "Android VPN Profiles"
+    description: "Configured VPN connection profiles and associated credentials"
+    paths:
+      - path: '^/data/misc/vpn/.*$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "Android Lock Screen Credential Files"
+    description: "Hashed screen-lock pattern (gesture.key) or password (password.key) credential material"
+    paths:
+      - "/data/system/gesture.key"
+      - "/data/system/password.key"
+    tag: "security"
+    category: "system"
+
+  - name: "Android Lock Settings Database"
+    description: "Lock screen type, PIN/pattern hashes and device security policy settings"
+    paths:
+      - "/data/system/locksettings.db"
+    tag: "security"
+    category: "system"
+
+  - name: "Android App Usage Statistics"
+    description: "Per-application foreground usage durations aggregated by day, week, month and year"
+    paths:
+      - path: '^/data/system/usagestats/[0-9]+/[0-9]+$'
+        regexp: true
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Android Recent Tasks Snapshots"
+    description: "Task manager metadata and screenshot thumbnails for recently used applications"
+    paths:
+      - path: '^/data/system_ce/0/recent_tasks/.*$'
+        regexp: true
+      - path: '^/data/system/recent_tasks/.*$'
+        regexp: true
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Android DropBoxManager Events"
+    description: "System-collected crash, ANR and data-usage event log entries from DropBoxManager"
+    paths:
+      - path: '^/data/system/dropbox/.*$'
+        regexp: true
+    tag: "logs"
+    category: "system"
+
+  - name: "Android Native Crash Tombstones"
+    description: "Native-layer crash dumps with stack traces, register state and memory maps"
+    paths:
+      - path: '^/data/tombstones/tombstone_[0-9]+$'
+        regexp: true
+    tag: "logs"
+    category: "system"
+
+  - name: "Android ANR Traces"
+    description: "Application Not Responding trace files generated during UI hang events"
+    paths:
+      - "/data/anr/traces.txt"
+      - path: '^/data/anr/anr_[0-9_]+$'
+        regexp: true
+    tag: "logs"
+    category: "system"
+
+  - name: "Android Persistent Logcat Output"
+    description: "Kernel and system logcat messages written to persistent storage where enabled"
+    paths:
+      - path: '^/data/logs?/.*$'
+        regexp: true
+    tag: "logs"
+    category: "system"
+
+  - name: "Android User Dictionary Database"
+    description: "Custom words added to the on-screen keyboard dictionary"
+    paths:
+      - "/data/data/com.android.providers.userdictionary/databases/user_dict.db"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "Android DCIM Media Files"
+    description: "User-generated camera photos and videos in the DCIM hierarchy on primary storage"
+    paths:
+      - path: '^/storage/emulated/0/DCIM/.*\.(jpg|jpeg|heic|png|mov|mp4|3gp)$'
+        regexp: true
+      - path: '^/sdcard/DCIM/.*\.(jpg|jpeg|heic|png|mov|mp4|3gp)$'
+        regexp: true
+    tag: "media"
+    category: "media"
+
+  - name: "Android Installed APK Files"
+    description: "Base APK package files under /data/app representing installed application code"
+    paths:
+      - path: '^/data/app/[^/]+-[^/]+/base\.apk$'
+        regexp: true
+    tag: "executables"
+    category: "system"
+
+  - name: "Android Chrome Browser History"
+    description: "Google Chrome browsing history, downloads and visit metadata"
+    paths:
+      - "/data/data/com.android.chrome/app_chrome/Default/History"
+    tag: "browser"
+    category: "users"
+
+  - name: "Android Samsung Internet Browser History"
+    description: "Samsung Internet browser visiting history and download records"
+    paths:
+      - "/data/data/com.sec.android.app.sbrowser/app_sbrowser/Default/History"
+    tag: "browser"
+    category: "users"
+
+  - name: "Android Firefox History"
+    description: "Mozilla Firefox (Firefox, Fenix, Focus) places.sqlite browsing history"
+    paths:
+      - path: '^/data/data/org\.mozilla\.(firefox|fenix|focus)/files/places\.sqlite$'
+        regexp: true
+    tag: "browser"
+    category: "users"
+
+  - name: "Android WhatsApp Databases"
+    description: "WhatsApp message store (msgstore.db), contact map (wa.db) and encrypted backup databases"
+    paths:
+      - "/data/data/com.whatsapp/databases/msgstore.db"
+      - "/data/data/com.whatsapp/databases/wa.db"
+      - path: '^/storage/emulated/0/Android/media/com\.whatsapp/WhatsApp/Databases/msgstore\.db(\.crypt1[245])?$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Telegram Databases"
+    description: "Telegram local message cache and account state database"
+    paths:
+      - path: '^/data/data/org\.telegram\.messenger/files/cache[0-9]+\.db$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Signal Database"
+    description: "Signal encrypted message store, attachments index and identity key database"
+    paths:
+      - "/data/data/org.thoughtcrime.securesms/databases/signal.db"
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Facebook Messenger Databases"
+    description: "Facebook Messenger conversation threads, media index and account preferences"
+    paths:
+      - path: '^/data/data/com\.facebook\.orca/databases/.*$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Viber Databases"
+    description: "Viber messaging and VoIP call records"
+    paths:
+      - "/data/data/com.viber.voip/databases/viber_data"
+      - "/data/data/com.viber.voip/databases/viber_messages"
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Gmail Database"
+    description: "Gmail message metadata, thread structures and label indexes"
+    paths:
+      - path: '^/data/data/com\.google\.android\.gm/databases/.*$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Snapchat Databases"
+    description: "Snapchat ephemeral message metadata, media references and account state"
+    paths:
+      - path: '^/data/data/com\.snapchat\.android/databases/.*$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Instagram Databases"
+    description: "Instagram direct messages, media metadata and account data"
+    paths:
+      - path: '^/data/data/com\.instagram\.android/databases/.*$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android TikTok Databases"
+    description: "TikTok local message cache, viewed content and account preference artefacts"
+    paths:
+      - path: '^/data/data/com\.zhiliaoapp\.musically/databases/.*$'
+        regexp: true
+    tag: "communications"
+    category: "users"
+
+  - name: "Android Google Maps Database"
+    description: "Google Maps search history, navigation destinations and local cache"
+    paths:
+      - path: '^/data/data/com\.google\.android\.apps\.maps/databases/.*$'
+        regexp: true
+    tag: "location"
+    category: "users"
+
+  - name: "Android Google Play Store Database"
+    description: "Application install records, purchase history and update metadata"
+    paths:
+      - path: '^/data/data/com\.android\.vending/databases/.*$'
+        regexp: true
+    tag: "packages"
+    category: "system"
+
   # ---------------- Windows Artifacts (Extended) ----------------
 
   - name: "Windows Event Logs – High-Value Operational Channels"

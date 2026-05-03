@@ -76,6 +76,91 @@ impl ArtifactSet {
     }
 }
 
+/// Flat, serializable view of an artifact definition suitable for UI display.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtifactCatalogEntry {
+    pub name: String,
+    pub description: String,
+    pub paths: Vec<String>,
+    pub parser: Option<String>,
+    pub tag: String,
+    pub category: Category,
+    pub platform: String,
+}
+
+fn infer_platform(paths: &[ArtifactPath]) -> &'static str {
+    for path_spec in paths {
+        let p: &str = match path_spec {
+            ArtifactPath::Literal(s) => s,
+            ArtifactPath::WithFlag { path, .. } => path,
+        };
+        // iOS: always rooted under /private/var/mobile/
+        if p.contains("/private/var/mobile") {
+            return "iOS";
+        }
+        // Android: /data/data/, /data/system, /data/misc/, /storage/emulated/, etc.
+        if p.contains("/data/data/")
+            || p.contains("/data/system")
+            || p.contains("/data/misc/")
+            || p.contains("/storage/emulated/")
+            || p.contains("/data/app/")
+            || p.contains("/data/anr")
+            || p.contains("/data/tombstones")
+            || p.contains("/data/log")
+        {
+            return "Android";
+        }
+        // macOS: /private/ hierarchy or /Library/ or /Volumes/
+        if p.contains("/private/")
+            || (p.contains("Library/") && !p.contains('\\'))
+            || p.contains("/Volumes/")
+        {
+            return "macOS";
+        }
+        // Windows: backslash separator, case-insensitive prefix, or drive-letter pattern
+        if p.contains('\\') || p.contains("(?i)") || p.contains("[A-Z]:") {
+            return "Windows";
+        }
+        // Linux: conventional unix paths
+        if p.starts_with('/') || p.starts_with("^/") || p.starts_with("^(?:/") {
+            return "Linux";
+        }
+    }
+    "Unknown"
+}
+
+/// Return the embedded artifact catalog as a flat list ready for serialisation.
+pub fn load_artifact_catalog() -> Vec<ArtifactCatalogEntry> {
+    let yaml = include_str!("../artifacts.yaml");
+    let set = match ArtifactSet::from_yaml_str(yaml) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    set.artifacts
+        .into_iter()
+        .map(|a| {
+            let platform = infer_platform(&a.paths).to_string();
+            let paths = a
+                .paths
+                .iter()
+                .map(|p| match p {
+                    ArtifactPath::Literal(s) => s.clone(),
+                    ArtifactPath::WithFlag { path, .. } => path.clone(),
+                })
+                .collect();
+            ArtifactCatalogEntry {
+                name: a.name,
+                description: a.description,
+                paths,
+                parser: a.parser,
+                tag: a.tag,
+                category: a.category,
+                platform,
+            }
+        })
+        .collect()
+}
+
 fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::Error> {
     Ok(File {
         id: row.try_get("id")?,
@@ -108,7 +193,210 @@ fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::E
 
 #[cfg(test)]
 mod tests {
-    use super::ArtifactSet;
+    use super::{extract_artefact, ArtifactSet};
+    use anyhow::Result;
+    use exhume_artefacts::{ObjectParsed, Parser};
+    use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, Filesystem};
+    use exhume_filesystem::File as ExhumeFile;
+    use serde_json::{json, Value};
+    use std::error::Error;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Clone)]
+    struct TestFile {
+        id: u64,
+        size: u64,
+    }
+
+    impl FileCommon for TestFile {
+        fn id(&self) -> u64 {
+            self.id
+        }
+
+        fn size(&self) -> u64 {
+            self.size
+        }
+
+        fn is_dir(&self) -> bool {
+            false
+        }
+
+        fn to_string(&self) -> String {
+            format!("TestFile(id={}, size={})", self.id, self.size)
+        }
+
+        fn to_json(&self) -> Value {
+            json!({
+                "id": self.id,
+                "size": self.size,
+            })
+        }
+    }
+
+    struct TestDirectory;
+
+    impl DirectoryCommon for TestDirectory {
+        fn file_id(&self) -> u64 {
+            0
+        }
+
+        fn name(&self) -> &str {
+            ""
+        }
+
+        fn to_string(&self) -> String {
+            "TestDirectory".to_string()
+        }
+
+        fn to_json(&self) -> Value {
+            json!({})
+        }
+    }
+
+    struct TestFilesystem {
+        file: TestFile,
+        bytes: Vec<u8>,
+    }
+
+    impl Filesystem for TestFilesystem {
+        type FileType = TestFile;
+        type DirectoryType = TestDirectory;
+
+        fn filesystem_type(&self) -> String {
+            "test".to_string()
+        }
+
+        fn path_separator(&self) -> String {
+            "/".to_string()
+        }
+
+        fn record_count(&mut self) -> u64 {
+            1
+        }
+
+        fn block_size(&self) -> u64 {
+            4096
+        }
+
+        fn get_metadata(&self) -> std::result::Result<Value, Box<dyn Error>> {
+            Ok(json!({}))
+        }
+
+        fn get_metadata_pretty(&self) -> std::result::Result<String, Box<dyn Error>> {
+            Ok("test".to_string())
+        }
+
+        fn get_file(
+            &mut self,
+            file_id: u64,
+        ) -> std::result::Result<Self::FileType, Box<dyn Error>> {
+            if file_id == self.file.id {
+                Ok(self.file.clone())
+            } else {
+                Err("missing file".into())
+            }
+        }
+
+        fn read_file_content(
+            &mut self,
+            _file: &Self::FileType,
+        ) -> std::result::Result<Vec<u8>, Box<dyn Error>> {
+            Ok(self.bytes.clone())
+        }
+
+        fn read_file_prefix(
+            &mut self,
+            _file: &Self::FileType,
+            length: usize,
+        ) -> std::result::Result<Vec<u8>, Box<dyn Error>> {
+            Ok(self.bytes.iter().copied().take(length).collect())
+        }
+
+        fn read_file_slice(
+            &mut self,
+            _file: &Self::FileType,
+            offset: u64,
+            length: usize,
+        ) -> std::result::Result<Vec<u8>, Box<dyn Error>> {
+            let start = offset as usize;
+            if start >= self.bytes.len() {
+                return Ok(Vec::new());
+            }
+
+            let end = start.saturating_add(length).min(self.bytes.len());
+            Ok(self.bytes[start..end].to_vec())
+        }
+
+        fn list_dir(
+            &mut self,
+            _file: &Self::FileType,
+        ) -> std::result::Result<Vec<Self::DirectoryType>, Box<dyn Error>> {
+            Ok(Vec::new())
+        }
+
+        fn record_to_file(
+            &self,
+            file: &Self::FileType,
+            file_id: u64,
+            absolute_path: &str,
+        ) -> ExhumeFile {
+            ExhumeFile {
+                id: None,
+                identifier: file_id,
+                absolute_path: absolute_path.to_string(),
+                name: "test.bin".to_string(),
+                ftype: "File".to_string(),
+                size: file.size,
+                created: None,
+                modified: None,
+                accessed: None,
+                permissions: None,
+                owner: None,
+                group: None,
+                display: None,
+                sig_name: None,
+                sig_mime: None,
+                sig_exts: None,
+                metadata: json!({}),
+            }
+        }
+
+        fn get_root_file_id(&self) -> u64 {
+            self.file.id
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingParser {
+        calls: AtomicUsize,
+    }
+
+    impl CountingParser {
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::Relaxed)
+        }
+    }
+
+    impl Parser for CountingParser {
+        fn name(&self) -> &'static str {
+            "test_parser"
+        }
+
+        fn run_into(
+            &self,
+            _input: exhume_artefacts::ParserInput,
+            sink: &mut dyn FnMut(ObjectParsed) -> Result<()>,
+        ) -> Result<()> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            sink(ObjectParsed {
+                parser: self.name(),
+                kind: "test.object",
+                text: "ok".to_string(),
+                json: json!({ "ok": true }),
+            })?;
+            Ok(())
+        }
+    }
 
     #[test]
     fn embedded_artifacts_yaml_parses() {
@@ -119,6 +407,39 @@ mod tests {
             !artifact_set.artifacts.is_empty(),
             "embedded artifacts.yaml should contain entries"
         );
+    }
+
+    #[test]
+    fn extract_artefact_skips_empty_files() {
+        let parser = CountingParser::default();
+        let mut fs = TestFilesystem {
+            file: TestFile { id: 7, size: 0 },
+            bytes: Vec::new(),
+        };
+
+        let objs =
+            extract_artefact(&mut fs, &parser, 7, "/empty.exe").expect("empty file should skip");
+
+        assert!(
+            objs.is_empty(),
+            "empty files should not emit parsed objects"
+        );
+        assert_eq!(parser.calls(), 0, "parser should not run for empty files");
+    }
+
+    #[test]
+    fn extract_artefact_parses_non_empty_files() {
+        let parser = CountingParser::default();
+        let mut fs = TestFilesystem {
+            file: TestFile { id: 8, size: 3 },
+            bytes: vec![1, 2, 3],
+        };
+
+        let objs = extract_artefact(&mut fs, &parser, 8, "/non-empty.exe")
+            .expect("non-empty file should be parsed");
+
+        assert_eq!(objs.len(), 1, "non-empty files should still be parsed");
+        assert_eq!(parser.calls(), 1, "parser should run for non-empty files");
     }
 }
 
@@ -407,6 +728,14 @@ where
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?
         }
     };
+
+    if record.size() == 0 {
+        info!(
+            "Skipping artefact extraction for empty file: {} (fs_identifier={})",
+            absolute_path, fs_identifier
+        );
+        return Ok(Vec::new());
+    }
 
     // Adapter: Read+Seek backed by Filesystem::read_file_slice
     let rs = FsFileReadSeek::new(fs, record);
