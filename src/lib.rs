@@ -5,7 +5,6 @@ use exhume_filesystem::{File, Filesystem};
 use sqlx::sqlite::SqlitePool;
 use sqlx::types::Json;
 use sqlx::Row;
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -108,32 +107,6 @@ fn compute_depth(path_key: &str) -> i64 {
 
 fn is_directory_type(ftype: &str) -> bool {
     matches!(ftype.to_ascii_lowercase().as_str(), "dir" | "directory")
-}
-
-async fn table_columns(pool: &SqlitePool, table: &str) -> Result<HashSet<String>, sqlx::Error> {
-    let pragma = format!("PRAGMA table_info({table})");
-    let rows = sqlx::query(&pragma).fetch_all(pool).await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|row| row.get::<String, _>("name"))
-        .collect())
-}
-
-async fn add_column_if_missing(
-    pool: &SqlitePool,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> Result<(), sqlx::Error> {
-    let columns = table_columns(pool, table).await?;
-    if columns.contains(column) {
-        return Ok(());
-    }
-
-    let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
-    sqlx::query(&sql).execute(pool).await?;
-    Ok(())
 }
 
 pub async fn ensure_evidence_row(
@@ -314,6 +287,9 @@ pub async fn index_filesystem<T: Filesystem>(
     pool: &SqlitePool,
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
+    // For folder evidence: the host filesystem root stored in `host_path` for shell operations.
+    // Pass None for disk image partitions (no direct host path mapping exists).
+    path_prefix: Option<&str>,
 ) {
     info!("Starting filesystem indexation…");
 
@@ -477,8 +453,9 @@ pub async fn index_filesystem<T: Filesystem>(
             sig_name,
             sig_mime,
             sig_exts,
+            host_path,
             metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     "#;
 
     for f in &files {
@@ -500,6 +477,18 @@ pub async fn index_filesystem<T: Filesystem>(
         } else {
             0i64
         };
+
+        // For folder evidence, compute the real host filesystem path.
+        // absolute_path stays as the logical forensic path (used by artifact pattern matching).
+        // host_path is what the agent should use for shell operations.
+        let host_path: Option<String> = path_prefix.map(|prefix| {
+            let p = prefix.trim_end_matches('/');
+            if f.absolute_path == "/" || f.absolute_path.is_empty() {
+                p.to_string()
+            } else {
+                format!("{}{}", p, f.absolute_path)
+            }
+        });
 
         let insert_err = match sqlx::query(stmt)
             .bind(evidence_id)
@@ -523,6 +512,7 @@ pub async fn index_filesystem<T: Filesystem>(
             .bind(Option::<String>::None)
             .bind(Option::<String>::None)
             .bind(Option::<String>::None)
+            .bind(host_path)
             .bind(Json(&f.metadata))
             .execute(&mut *tx)
             .await
@@ -656,6 +646,7 @@ pub async fn index_partition_with_format(
         pool,
         tx_progress,
         cancel_token,
+        None, // disk image partitions have no direct host path mapping
     )
     .await;
     Ok(())
@@ -669,7 +660,7 @@ pub async fn index_folder(
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
 ) {
-    let path = PathBuf::from(folder_path);
+    let path = PathBuf::from(&folder_path);
     let mut fs = FolderFS::new(path);
     index_filesystem(
         &mut fs,
@@ -678,6 +669,7 @@ pub async fn index_folder(
         pool,
         tx_progress,
         cancel_token,
+        Some(&folder_path),
     )
     .await
 }
@@ -740,6 +732,8 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             sig_name        TEXT,
             sig_mime        TEXT,
             sig_exts        TEXT,
+            anomaly_flag    INTEGER,
+            host_path       TEXT,
             metadata        JSON    NOT NULL
         );
 
@@ -772,18 +766,6 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
-    add_column_if_missing(pool, "system_files", "display", "TEXT").await?;
-    add_column_if_missing(
-        pool,
-        "system_files",
-        "path_key",
-        "TEXT NOT NULL DEFAULT '/'",
-    )
-    .await?;
-    add_column_if_missing(pool, "system_files", "parent_path_key", "TEXT").await?;
-    add_column_if_missing(pool, "system_files", "depth", "INTEGER NOT NULL DEFAULT 0").await?;
-    add_column_if_missing(pool, "system_files", "is_dir", "INTEGER NOT NULL DEFAULT 0").await?;
-
     sqlx::query(
         r#"
         CREATE INDEX IF NOT EXISTS idx_partitions_evidence
@@ -800,6 +782,8 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             ON system_files (evidence_id, partition_id, path_key);
         CREATE INDEX IF NOT EXISTS idx_sysfiles_tree_parent
             ON system_files (evidence_id, partition_id, parent_path_key, is_dir, name);
+        CREATE INDEX IF NOT EXISTS idx_sysfiles_anomaly
+            ON system_files (anomaly_flag) WHERE anomaly_flag IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_evp
             ON artifact_objects (evidence_id, partition_id);
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_artifact
@@ -808,6 +792,63 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             ON artifact_objects (file_id);
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_parser_kind
             ON artifact_objects (parser, kind);
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Unified timeline view: all filesystem timestamps in a single queryable surface
+    sqlx::query(
+        r#"
+        CREATE VIEW IF NOT EXISTS timeline AS
+        SELECT
+            sf.evidence_id,
+            sf.partition_id,
+            sf.id          AS row_id,
+            sf.identifier,
+            sf.absolute_path,
+            sf.host_path,
+            sf.name,
+            sf.sig_name,
+            sf.anomaly_flag,
+            'created'      AS event_type,
+            datetime(sf.created, 'unixepoch') AS event_time,
+            sf.created     AS ts_unix
+        FROM system_files sf
+        WHERE sf.created IS NOT NULL AND sf.is_dir = 0
+        UNION ALL
+        SELECT
+            sf.evidence_id,
+            sf.partition_id,
+            sf.id,
+            sf.identifier,
+            sf.absolute_path,
+            sf.host_path,
+            sf.name,
+            sf.sig_name,
+            sf.anomaly_flag,
+            'modified',
+            datetime(sf.modified, 'unixepoch'),
+            sf.modified
+        FROM system_files sf
+        WHERE sf.modified IS NOT NULL AND sf.is_dir = 0
+        UNION ALL
+        SELECT
+            sf.evidence_id,
+            sf.partition_id,
+            sf.id,
+            sf.identifier,
+            sf.absolute_path,
+            sf.host_path,
+            sf.name,
+            sf.sig_name,
+            sf.anomaly_flag,
+            'accessed',
+            datetime(sf.accessed, 'unixepoch'),
+            sf.accessed
+        FROM system_files sf
+        WHERE sf.accessed IS NOT NULL AND sf.is_dir = 0
+        ORDER BY ts_unix;
         "#,
     )
     .execute(pool)

@@ -135,12 +135,31 @@ pub async fn identify_file_types<T: Filesystem>(
         // Signature → UPDATE
         let ft = FileType::from_bytes(&prefix);
 
+        // Detect extension mismatch: file's actual extension not in signature's known extensions
+        let sig_exts = ft.extensions();
+        let file_ext = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let anomaly_flag: Option<i64> = if !sig_exts.is_empty() && !file_ext.is_empty() {
+            let known: Vec<String> = sig_exts.iter().map(|e| e.to_lowercase()).collect();
+            if known.contains(&file_ext) {
+                None
+            } else {
+                Some(1)
+            }
+        } else {
+            None
+        };
+
         let update_err = match sqlx::query(
             r#"
             UPDATE system_files
-               SET sig_name = ?,
-                   sig_mime = ?,
-                   sig_exts = ?
+               SET sig_name     = ?,
+                   sig_mime     = ?,
+                   sig_exts     = ?,
+                   anomaly_flag = ?
              WHERE evidence_id  = ?
                AND partition_id = ?
                AND identifier   = ?
@@ -148,7 +167,8 @@ pub async fn identify_file_types<T: Filesystem>(
         )
         .bind(ft.name())
         .bind(ft.media_types().join(","))
-        .bind(ft.extensions().join(","))
+        .bind(sig_exts.join(","))
+        .bind(anomaly_flag)
         .bind(evidence_id)
         .bind(partition_id)
         .bind(record_id as i64)
