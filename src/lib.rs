@@ -14,6 +14,10 @@ use tracing::{error, info};
 pub mod artifacts;
 pub mod identification;
 
+/// The raw YAML source for the artifact catalog, embedded at compile time.
+/// Consumers can parse it with `ArtifactSet::from_yaml_str`.
+pub const ARTIFACTS_YAML: &str = include_str!("../artifacts.yaml");
+
 #[derive(Debug, Clone)]
 pub enum IndexerEventType {
     Info,
@@ -278,6 +282,66 @@ pub async fn list_partitions(
             fvek: row.try_get("fvek").ok(),
         })
         .collect())
+}
+
+/// Populate `timeline_events` with filesystem timestamp entries for a partition.
+///
+/// Inserts one row per non-null `created`, `modified`, and `accessed` timestamp
+/// from `system_files`, converting seconds to milliseconds. Existing filesystem
+/// entries for this partition are replaced on each call (idempotent).
+pub async fn populate_filesystem_timeline(
+    evidence_id: i64,
+    partition_id: i64,
+    pool: &SqlitePool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM timeline_events WHERE evidence_id = ? AND partition_id = ? AND source = 'filesystem'",
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO timeline_events (evidence_id, partition_id, ts, source, event_type, description, file_id)
+        SELECT evidence_id, partition_id, created * 1000, 'filesystem', 'file.created', name, id
+        FROM system_files
+        WHERE evidence_id = ? AND partition_id = ? AND created IS NOT NULL AND is_dir = 0
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO timeline_events (evidence_id, partition_id, ts, source, event_type, description, file_id)
+        SELECT evidence_id, partition_id, modified * 1000, 'filesystem', 'file.modified', name, id
+        FROM system_files
+        WHERE evidence_id = ? AND partition_id = ? AND modified IS NOT NULL AND is_dir = 0
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO timeline_events (evidence_id, partition_id, ts, source, event_type, description, file_id)
+        SELECT evidence_id, partition_id, accessed * 1000, 'filesystem', 'file.accessed', name, id
+        FROM system_files
+        WHERE evidence_id = ? AND partition_id = ? AND accessed IS NOT NULL AND is_dir = 0
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn index_filesystem<T: Filesystem>(
@@ -761,6 +825,56 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             json            TEXT NOT NULL,
             created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
         );
+
+        CREATE TABLE IF NOT EXISTS timeline_events (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            evidence_id          INTEGER NOT NULL,
+            partition_id         INTEGER NOT NULL,
+            ts                   INTEGER NOT NULL,
+            source               TEXT NOT NULL,
+            event_type           TEXT NOT NULL,
+            description          TEXT,
+            file_id              INTEGER,
+            artifact_object_id   INTEGER,
+            actor                TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS artifact_attachment_refs (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            evidence_id            INTEGER NOT NULL,
+            partition_id           INTEGER NOT NULL,
+            artifact_object_id     INTEGER NOT NULL,
+            parser                 TEXT NOT NULL,
+            app                    TEXT,
+            platform               TEXT,
+            media_rowid            INTEGER,
+            message_rowid          INTEGER,
+            chat_rowid             INTEGER,
+            local_path             TEXT,
+            thumbnail_local_path   TEXT,
+            remote_url             TEXT,
+            title                  TEXT,
+            kind                   TEXT,
+            mime                   TEXT,
+            file_name              TEXT,
+            file_size              INTEGER,
+            duration_seconds       REAL,
+            width                  INTEGER,
+            height                 INTEGER,
+            latitude               REAL,
+            longitude              REAL,
+            resolved_file_id       INTEGER,
+            resolved_fs_identifier INTEGER,
+            resolved_absolute_path TEXT,
+            resolved_host_path     TEXT,
+            resolved_sig_mime      TEXT,
+            resolved_name          TEXT,
+            resolved_size          INTEGER,
+            preview_mime           TEXT,
+            preview_base64         TEXT,
+            json                   TEXT NOT NULL,
+            created_at             INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        );
         "#,
     )
     .execute(pool)
@@ -792,6 +906,16 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             ON artifact_objects (file_id);
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_parser_kind
             ON artifact_objects (parser, kind);
+        CREATE INDEX IF NOT EXISTS idx_attachment_refs_message
+            ON artifact_attachment_refs (evidence_id, partition_id, parser, message_rowid);
+        CREATE INDEX IF NOT EXISTS idx_attachment_refs_chat
+            ON artifact_attachment_refs (evidence_id, partition_id, parser, chat_rowid);
+        CREATE INDEX IF NOT EXISTS idx_attachment_refs_object
+            ON artifact_attachment_refs (artifact_object_id);
+        CREATE INDEX IF NOT EXISTS idx_timeline_events_ev_part
+            ON timeline_events (evidence_id, partition_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_timeline_events_source
+            ON timeline_events (evidence_id, partition_id, source, event_type);
         "#,
     )
     .execute(pool)

@@ -8,7 +8,8 @@ use exhume_indexer::artifacts::{extract_artefacts, identify_artefacts};
 use exhume_indexer::identification::identify_file_types;
 use exhume_indexer::{
     ensure_evidence_row, ensure_tables, index_folder, index_partition_with_format,
-    insert_partition, update_partition, IndexerEvent, IndexerEventType, PartitionKind,
+    insert_partition, populate_filesystem_timeline, update_partition, IndexerEvent,
+    IndexerEventType, PartitionKind,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -293,6 +294,10 @@ async fn main() -> Result<()> {
             .await;
             drop(tx2);
             let _ = monitor2.await;
+
+            populate_filesystem_timeline(evidence_id, partition_id, &pool)
+                .await
+                .context("Failed to populate filesystem timeline")?;
         }
     }
 

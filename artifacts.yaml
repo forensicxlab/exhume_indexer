@@ -228,49 +228,49 @@ artifacts:
     description: "Inbound HTTP requests to Apache HTTP Server"
     paths:
       - "/var/log/apache2/access.log"
-    tag: "logs"
+    tag: "Apache"
     category: "application"
 
   - name: "Apache Error Log (Debian)"
     description: "Error messages from Apache HTTP Server"
     paths:
       - "/var/log/apache2/error.log"
-    tag: "logs"
+    tag: "Apache"
     category: "application"
 
   - name: "Apache Access Log (RHEL)"
     description: "Inbound HTTP requests to Apache HTTP Server"
     paths:
       - "/etc/httpd/logs/access_log"
-    tag: "logs"
+    tag: "Apache"
     category: "application"
 
   - name: "Apache Error Log (RHEL)"
     description: "Error messages from Apache HTTP Server"
     paths:
       - "/etc/httpd/logs/error_log"
-    tag: "logs"
+    tag: "Apache"
     category: "application"
 
   - name: "NGINX Access Log"
     description: "Inbound HTTP requests handled by NGINX"
     paths:
       - "/var/log/nginx/access.log"
-    tag: "logs"
+    tag: "NGINX"
     category: "application"
 
   - name: "NGINX Error Log"
     description: "Error messages produced by NGINX"
     paths:
       - "/var/log/nginx/error.log"
-    tag: "logs"
+    tag: "NGINX"
     category: "application"
 
   - name: "Docker Container JSON Logs"
     description: "Default JSON logs emitted by Docker containers"
     paths:
       - "/var/lib/docker/containers"
-    tag: "logs"
+    tag: "Docker"
     category: "application"
 
   # ---------------- Windows Artifacts ----------------
@@ -388,22 +388,22 @@ artifacts:
     description: "SQLite database of visited URLs and download entries for Google Chrome"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History'
-    tag: "browser"
-    category: "users"
+    tag: "Chrome"
+    category: "application"
 
   - name: "Edge Browser History"
     description: "Chromium-based Microsoft Edge visit history"
     paths:
       - '\Users\[^\\]+\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History'
-    tag: "browser"
-    category: "users"
+    tag: "Edge"
+    category: "application"
 
   - name: "Firefox Places History"
     description: "Visited pages and download data for Mozilla Firefox"
     paths:
       - '\Users\[^\\]+\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\[^\\]+\\places\.sqlite'
-    tag: "browser"
-    category: "users"
+    tag: "Firefox"
+    category: "application"
 
   - name: "PowerShell Console History"
     description: "Plain-text command history captured by PSReadLine for each user"
@@ -545,7 +545,7 @@ artifacts:
       # Any profile (Profile 1, Profile 2, etc.)
       - path: 'C:\\Users\\[^\\]+\\AppData\\Local\\Google\\Chrome\\User Data\\Profile [0-9]+\\History'
         regexp: true
-    tag: "browser"
+    tag: "Chrome"
     category: "application"
 
   - name: "SQLite Databases"
@@ -941,16 +941,16 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Safari/History\.db$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Safari"
+    category: "application"
 
   - name: "macOS Safari Downloads"
     description: "Safari download plist with source URLs and target paths"
     paths:
       - path: '^/Users/[^/]+/Library/Safari/Downloads\.plist$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Safari"
+    category: "application"
 
   - name: "macOS Safari Bookmarks and Sessions"
     description: "Safari bookmarks and last session state"
@@ -959,42 +959,62 @@ artifacts:
         regexp: true
       - path: '^/Users/[^/]+/Library/Safari/LastSession\.plist$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Safari"
+    category: "application"
 
-  - name: "macOS Browser History – Chromium Family"
-    description: "Chrome/Chromium/Edge/Brave per-profile browsing history"
+  - name: "macOS Chrome and Chromium History"
+    description: "Google Chrome and Chromium per-profile browsing history"
     paths:
-      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium|Microsoft Edge|BraveSoftware/Brave-Browser)/Default/History$"
+      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium)/Default/History$"
         regexp: true
-      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium|Microsoft Edge|BraveSoftware/Brave-Browser)/Profile [0-9]+/History$"
+      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium)/Profile [0-9]+/History$"
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Chrome"
+    category: "application"
+
+  - name: "macOS Microsoft Edge History"
+    description: "Microsoft Edge per-profile browsing history"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/Microsoft Edge/Default/History$"
+        regexp: true
+      - path: "^/Users/[^/]+/Library/Application Support/Microsoft Edge/Profile [0-9]+/History$"
+        regexp: true
+    tag: "Edge"
+    category: "application"
+
+  - name: "macOS Brave History"
+    description: "Brave Browser per-profile browsing history"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/BraveSoftware/Brave-Browser/Default/History$"
+        regexp: true
+      - path: "^/Users/[^/]+/Library/Application Support/BraveSoftware/Brave-Browser/Profile [0-9]+/History$"
+        regexp: true
+    tag: "Brave"
+    category: "application"
 
   - name: "macOS Firefox Places History"
     description: "Firefox profile history and download metadata"
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/Firefox/Profiles/[^/]+/places\.sqlite$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Firefox"
+    category: "application"
 
   - name: "macOS iMessage Database"
     description: "Messages chat database containing SMS/iMessage conversation metadata and content"
     paths:
       - path: '^/Users/[^/]+/Library/Messages/chat\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "iMessage"
+    category: "application"
 
   - name: "macOS Call History Database"
     description: "FaceTime/Phone call history records"
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/CallHistoryDB/CallHistory\.storedata$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "FaceTime"
+    category: "application"
 
   - name: "macOS Notification Center Databases"
     description: "Notification records and displayed alert metadata"
@@ -1036,7 +1056,7 @@ artifacts:
       - path: '^/Users/[^/]+/Library/Logs/DiagnosticReports/.*\.(crash|ips)$'
         regexp: true
     tag: "logs"
-    category: "application"
+    category: "system"
 
   - name: "macOS Wi-Fi and Network Configuration Plists"
     description: "Persistent Wi-Fi and network interface configuration"
@@ -1071,15 +1091,35 @@ artifacts:
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/SMS/sms\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    parser: "mobile_ios_imessage"
+    tag: "iMessage"
+    category: "application"
+
+  - name: "iOS SMS and iMessage Companion Files and Attachments"
+    description: "Messages WAL/SHM sidecars and attachment files referenced by sms.db"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SMS/sms\.db-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SMS/Attachments/.*$'
+        regexp: true
+    tag: "iMessage"
+    category: "application"
 
   - name: "iOS Contacts Database"
-    description: "Address book and contact linkage database"
+    description: "Address book contact records, multi-value entries and linkage data"
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBook\.sqlitedb$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBookImages\.sqlitedb$'
+    parser: "mobile_ios_contacts"
+    tag: "contacts"
+    category: "users"
+
+  - name: "iOS Contacts Companion Files and Images"
+    description: "Address book WAL/SHM sidecars and contact image database"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBook\.sqlitedb-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/AddressBook/AddressBookImages\.sqlitedb(|-shm|-wal)$'
         regexp: true
     tag: "contacts"
     category: "users"
@@ -1089,30 +1129,52 @@ artifacts:
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/CallHistoryDB/CallHistory\.storedata$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    parser: "mobile_ios_callhistory"
+    tag: "Phone"
+    category: "application"
+
+  - name: "iOS Call History Companion Files"
+    description: "Call history WAL/SHM sidecars and temporary call staging database"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CallHistoryDB/CallHistory\.storedata-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CallHistoryDB/CallHistoryTemp\.storedata(|-shm|-wal)$'
+        regexp: true
+    tag: "Phone"
+    category: "application"
 
   - name: "iOS Voicemail Database"
     description: "Voicemail metadata and message state database"
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/Voicemail/voicemail\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Phone"
+    category: "application"
 
-  - name: "iOS WhatsApp Databases and Preferences"
-    description: "WhatsApp message store, media references and application preference artefacts"
+  - name: "iOS WhatsApp ChatStorage Database"
+    description: "WhatsApp iOS message store database"
     paths:
-      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/ChatStorage\.sqlite(|-shm|-wal)$'
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/ChatStorage\.sqlite$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite(|-shm|-wal)$'
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite$'
+        regexp: true
+    parser: "mobile_ios_whatsapp"
+    tag: "WhatsApp"
+    category: "application"
+
+  - name: "iOS WhatsApp Companion Files and Media"
+    description: "WhatsApp iOS WAL/SHM files, preferences and media references"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/ChatStorage\.sqlite-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite-(shm|wal)$'
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/net\.whatsapp\.WhatsApp\.plist$'
         regexp: true
       - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/Message/Media/.*$"
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "WhatsApp"
+    category: "application"
 
   - name: "iOS Signal Databases and Preferences"
     description: "Signal message store, profile data and application preferences"
@@ -1123,8 +1185,8 @@ artifacts:
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/org\.whispersystems\.signal\.plist$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Signal"
+    category: "application"
 
   - name: "iOS Telegram Databases and Cache"
     description: "Telegram local message cache, account state and media cache artefacts"
@@ -1137,8 +1199,8 @@ artifacts:
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/ph\.telegra\.Telegram\.plist$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Telegram"
+    category: "application"
 
   - name: "iOS Facebook Messenger Databases and Preferences"
     description: "Messenger chat databases, attachment indexes and application preferences"
@@ -1151,30 +1213,71 @@ artifacts:
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/com\.facebook\.Messenger\.plist$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Facebook Messenger"
+    category: "application"
 
-  - name: "iOS Notes Databases"
-    description: "Native Apple Notes content and metadata stores"
+  - name: "iOS Notes Database"
+    description: "Modern Apple Notes store (NoteStore.sqlite) with note metadata"
     paths:
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Notes/notes\.sqlite$'
-        regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[A-F0-9-]+/NoteStore\.sqlite$'
         regexp: true
-    tag: "notes"
-    category: "users"
+    parser: "mobile_ios_notes"
+    tag: "Notes"
+    category: "application"
 
-  - name: "iOS Safari History and Browser State"
-    description: "Safari browsing history, tab/session state and recent browsing context"
+  - name: "iOS Notes Companion Files"
+    description: "Notes WAL/SHM sidecars and the legacy notes.sqlite store"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[A-F0-9-]+/NoteStore\.sqlite-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Notes/notes\.sqlite(|-shm|-wal)$'
+        regexp: true
+    tag: "Notes"
+    category: "application"
+
+  - name: "iOS Calendar Database"
+    description: "Native Calendar events, participants and reminders store"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Calendar/Calendar\.sqlitedb$'
+        regexp: true
+    parser: "mobile_ios_calendar"
+    tag: "Calendar"
+    category: "application"
+
+  - name: "iOS Calendar Companion Files"
+    description: "Calendar WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Calendar/Calendar\.sqlitedb-(shm|wal)$'
+        regexp: true
+    tag: "Calendar"
+    category: "application"
+
+  - name: "iOS Safari History Database"
+    description: "Safari browsing history items and visit records"
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/History\.db$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/BrowserState\.db$'
+    parser: "mobile_ios_safari"
+    tag: "Safari"
+    category: "application"
+
+  - name: "iOS Safari History Companion Files"
+    description: "Safari history WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/History\.db-(shm|wal)$'
+        regexp: true
+    tag: "Safari"
+    category: "application"
+
+  - name: "iOS Safari Browser State"
+    description: "Safari tab/session state and recent browsing context"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/BrowserState\.db(|-shm|-wal)$'
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/Safari/SuspendState\.plist$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Safari"
+    category: "application"
 
   - name: "iOS Maps History"
     description: "Apple Maps search, route and geolocation history"
@@ -1183,21 +1286,79 @@ artifacts:
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/Maps/GeoHistory\.mapsdata$'
         regexp: true
-    tag: "location"
-    category: "users"
+    tag: "Maps"
+    category: "application"
 
   - name: "iOS KnowledgeC Database"
     description: "CoreDuet behavioral timeline database for app usage, mobility and user activity"
     paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CoreDuet/Knowledge/knowledgeC\.db$'
+        regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/Application Support/Knowledge/knowledgeC\.db$'
         regexp: true
+    parser: "mobile_ios_knowledgec"
     tag: "user_activity"
+    category: "users"
+
+  - name: "iOS KnowledgeC Companion Files"
+    description: "KnowledgeC WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CoreDuet/Knowledge/knowledgeC\.db-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Application Support/Knowledge/knowledgeC\.db-(shm|wal)$'
+        regexp: true
+    tag: "user_activity"
+    category: "users"
+
+  - name: "iOS InteractionC Database"
+    description: "CoreDuet people interactions database recording per-app communication counterparts"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CoreDuet/People/interactionC\.db$'
+        regexp: true
+    parser: "mobile_ios_interactionc"
+    tag: "user_activity"
+    category: "users"
+
+  - name: "iOS InteractionC Companion Files"
+    description: "InteractionC WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/CoreDuet/People/interactionC\.db-(shm|wal)$'
+        regexp: true
+    tag: "user_activity"
+    category: "users"
+
+  - name: "iOS Routined Location Cache"
+    description: "Significant-location cache with raw GPS fixes (Cache.sqlite)"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Caches/com\.apple\.routined/Cache\.sqlite$'
+        regexp: true
+    parser: "mobile_ios_routined"
+    tag: "location"
+    category: "users"
+
+  - name: "iOS Routined Location Companion Caches"
+    description: "Routined Cache WAL/SHM sidecars and Local/Cloud significant-location stores"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Caches/com\.apple\.routined/Cache\.sqlite-(shm|wal)$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/Caches/com\.apple\.routined/(Local|Cloud)\.sqlite(|-shm|-wal)$'
+        regexp: true
+    tag: "location"
     category: "users"
 
   - name: "iOS TCC Privacy Database"
     description: "Privacy permission decisions for applications requesting protected resources"
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/TCC/TCC\.db$'
+        regexp: true
+    parser: "mobile_ios_tcc"
+    tag: "privacy"
+    category: "users"
+
+  - name: "iOS TCC Privacy Companion Files"
+    description: "TCC WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Library/TCC/TCC\.db-(shm|wal)$'
         regexp: true
     tag: "privacy"
     category: "users"
@@ -1210,22 +1371,38 @@ artifacts:
     tag: "accounts"
     category: "users"
 
-  - name: "iOS Mail Metadata"
-    description: "Apple Mail message index and metadata databases"
+  - name: "iOS Mail Envelope Index"
+    description: "Apple Mail message index (structure, dates, flags)"
     paths:
-      - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Envelope Index(|-shm|-wal)$"
+      - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Envelope Index$"
+        regexp: true
+    parser: "mobile_ios_mail"
+    tag: "Mail"
+    category: "application"
+
+  - name: "iOS Mail Companion Files"
+    description: "Mail Envelope Index sidecars and the Protected Index (subjects/addresses text)"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Envelope Index-(shm|wal)$"
         regexp: true
       - path: "^(?:/[^/]+)*/private/var/mobile/Library/Mail/Protected Index(|-shm|-wal)$"
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Mail"
+    category: "application"
 
-  - name: "iOS Photos Databases"
-    description: "Photo library metadata, album membership and media relationship databases"
+  - name: "iOS Photos Database"
+    description: "Photo library asset metadata, capture dates, GPS and relationships"
     paths:
       - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/Photos\.sqlite$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/Photos\.sqlite-wal$'
+    parser: "mobile_ios_photos"
+    tag: "media"
+    category: "media"
+
+  - name: "iOS Photos Companion Files"
+    description: "Photos WAL/SHM sidecars and DCIM metadata plist"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/Photos\.sqlite-(shm|wal)$'
         regexp: true
       - path: '^(?:/[^/]+)*/private/var/mobile/Media/PhotoData/metadata/DCIM_APPLE\.plist$'
         regexp: true
@@ -1267,6 +1444,31 @@ artifacts:
     paths:
       - path: '^(?:/[^/]+)*/private/var/wireless/Library/Databases/DataUsage\.sqlite$'
         regexp: true
+    parser: "mobile_ios_datausage"
+    tag: "network"
+    category: "network"
+
+  - name: "iOS Data Usage Companion Files"
+    description: "DataUsage WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/wireless/Library/Databases/DataUsage\.sqlite-(shm|wal)$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "iOS Network Usage Database"
+    description: "Per-process network usage accounting maintained by networkd"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/networkd/db/netusage\.sqlite(|-shm|-wal)$'
+        regexp: true
+    tag: "network"
+    category: "network"
+
+  - name: "iOS Cellular Usage Database"
+    description: "SIM and phone-number history with cellular usage records"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/wireless/Library/Databases/CellularUsage\.db(|-shm|-wal)$'
+        regexp: true
     tag: "network"
     category: "network"
 
@@ -1290,6 +1492,50 @@ artifacts:
       - path: '^(?:/[^/]+)*/private/var/mobile/Library/SpringBoard/LastLaunchServicesMap\.plist$'
         regexp: true
     tag: "user_activity"
+    category: "system"
+
+  - name: "iOS WhatsApp Application Logs"
+    description: "WhatsApp application log files within the app and shared group containers"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Caches/net\.whatsapp\.WhatsApp/Logs/.*$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/net\.whatsapp\.WhatsApp\.shared/Logs/.*$'
+        regexp: true
+    tag: "WhatsApp"
+    category: "application"
+
+  - name: "iOS Signal Application Logs"
+    description: "Signal application log and crash files within the app container"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Caches/org\.whispersystems\.signal/Logs/.*$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Logs/.*\.log$'
+        regexp: true
+    tag: "Signal"
+    category: "application"
+
+  - name: "iOS Telegram Application Logs"
+    description: "Telegram application log files within the app and shared group containers"
+    paths:
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Documents/logs/.*$"
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/telegram-data/logs/.*$"
+        regexp: true
+    tag: "Telegram"
+    category: "application"
+
+  - name: "iOS Discord Databases and Preferences"
+    description: "Discord local message cache, channel history and application preference artefacts"
+    paths:
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Application Support/com\.hammerandchisel\.discord/.*$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Application Support/Discord/.*$"
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Data/Application/[^/]+/Library/Preferences/com\.hammerandchisel\.discord\.plist$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/private/var/mobile/Containers/Shared/AppGroup/[^/]+/com\.hammerandchisel\.discord.*$'
+        regexp: true
+    tag: "Discord"
     category: "application"
 
   # ---------------- Android Artifacts ----------------
@@ -1297,80 +1543,88 @@ artifacts:
   - name: "Android SMS and MMS Database"
     description: "Primary telephony message store containing SMS and MMS conversation content and metadata"
     paths:
-      - "/data/data/com.android.providers.telephony/databases/mmssms.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.telephony/databases/mmssms\.db$'
+        regexp: true
     tag: "communications"
     category: "users"
 
   - name: "Android Telephony Database"
     description: "Carrier, SIM and subscription metadata including IMSI and ICCID records"
     paths:
-      - "/data/data/com.android.providers.telephony/databases/telephony.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.telephony/databases/telephony\.db$'
+        regexp: true
     tag: "communications"
     category: "system"
 
   - name: "Android Contacts and Call Log Database"
     description: "Contact records and full call history (CallLog table) managed by the contacts provider"
     paths:
-      - "/data/data/com.android.providers.contacts/databases/contacts2.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.contacts/databases/contacts2\.db$'
+        regexp: true
     tag: "communications"
     category: "users"
 
   - name: "Android Calendar Database"
     description: "Calendar events, reminders and attendee records from the calendar provider"
     paths:
-      - "/data/data/com.android.providers.calendar/databases/calendar.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.calendar/databases/calendar\.db$'
+        regexp: true
     tag: "user_activity"
     category: "users"
 
   - name: "Android Media Store Database"
     description: "Indexed media metadata for images, audio and video on internal and external storage"
     paths:
-      - "/data/data/com.android.providers.media/databases/external.db"
-      - "/data/data/com.android.providers.media/databases/internal.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.media/databases/(external|internal)\.db$'
+        regexp: true
     tag: "media"
     category: "media"
 
   - name: "Android Downloads Database"
     description: "Download manager records including source URLs, destination paths and completion state"
     paths:
-      - "/data/data/com.android.providers.downloads/databases/downloads.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.downloads/databases/downloads\.db$'
+        regexp: true
     tag: "user_activity"
     category: "users"
 
   - name: "Android Settings Database"
     description: "System and per-user preference key-value pairs managed by the settings provider"
     paths:
-      - "/data/data/com.android.providers.settings/databases/settings.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.settings/databases/settings\.db$'
+        regexp: true
     tag: "config"
     category: "system"
 
   - name: "Android Installed Package List"
     description: "Installed application manifests with permissions, signing certificates and data paths"
     paths:
-      - "/data/system/packages.xml"
+      - path: '^(?:/[^/]+)*/data/system/packages\.xml$'
+        regexp: true
     tag: "packages"
     category: "system"
 
   - name: "Android Accounts Database"
     description: "Configured Google and third-party account credentials and auth tokens (FBE partition)"
     paths:
-      - "/data/system_de/0/accounts.db"
-      - "/data/system/accounts.db"
+      - path: '^(?:/[^/]+)*/data/(system_de/[0-9]+|system)/accounts\.db$'
+        regexp: true
     tag: "accounts"
     category: "users"
 
   - name: "Android Google Services Framework Database"
     description: "Google account identifiers and GCM/FCM push-notification registration records"
     paths:
-      - "/data/data/com.google.android.gsf/databases/gservices.db"
+      - path: '^(?:/[^/]+)*/com\.google\.android\.gsf/databases/gservices\.db$'
+        regexp: true
     tag: "accounts"
     category: "system"
 
   - name: "Android Wi-Fi Configuration Store"
     description: "Saved wireless network profiles including SSIDs, PSKs and EAP configuration"
     paths:
-      - "/data/misc/wifi/WifiConfigStore.xml"
-      - "/data/misc/wifi/wpa_supplicant.conf"
+      - path: '^(?:/[^/]+)*/data/misc/wifi/(WifiConfigStore\.xml|wpa_supplicant\.conf)$'
+        regexp: true
     tag: "network"
     category: "network"
 
@@ -1385,7 +1639,7 @@ artifacts:
   - name: "Android VPN Profiles"
     description: "Configured VPN connection profiles and associated credentials"
     paths:
-      - path: '^/data/misc/vpn/.*$'
+      - path: "^/data/misc/vpn/.*$"
         regexp: true
     tag: "network"
     category: "network"
@@ -1393,22 +1647,23 @@ artifacts:
   - name: "Android Lock Screen Credential Files"
     description: "Hashed screen-lock pattern (gesture.key) or password (password.key) credential material"
     paths:
-      - "/data/system/gesture.key"
-      - "/data/system/password.key"
+      - path: '^(?:/[^/]+)*/data/system/(gesture|password)\.key$'
+        regexp: true
     tag: "security"
     category: "system"
 
   - name: "Android Lock Settings Database"
     description: "Lock screen type, PIN/pattern hashes and device security policy settings"
     paths:
-      - "/data/system/locksettings.db"
+      - path: '^(?:/[^/]+)*/data/system/locksettings\.db$'
+        regexp: true
     tag: "security"
     category: "system"
 
   - name: "Android App Usage Statistics"
     description: "Per-application foreground usage durations aggregated by day, week, month and year"
     paths:
-      - path: '^/data/system/usagestats/[0-9]+/[0-9]+$'
+      - path: "^/data/system/usagestats/[0-9]+/[0-9]+$"
         regexp: true
     tag: "user_activity"
     category: "users"
@@ -1416,9 +1671,9 @@ artifacts:
   - name: "Android Recent Tasks Snapshots"
     description: "Task manager metadata and screenshot thumbnails for recently used applications"
     paths:
-      - path: '^/data/system_ce/0/recent_tasks/.*$'
+      - path: "^/data/system_ce/0/recent_tasks/.*$"
         regexp: true
-      - path: '^/data/system/recent_tasks/.*$'
+      - path: "^/data/system/recent_tasks/.*$"
         regexp: true
     tag: "user_activity"
     category: "users"
@@ -1426,7 +1681,7 @@ artifacts:
   - name: "Android DropBoxManager Events"
     description: "System-collected crash, ANR and data-usage event log entries from DropBoxManager"
     paths:
-      - path: '^/data/system/dropbox/.*$'
+      - path: "^/data/system/dropbox/.*$"
         regexp: true
     tag: "logs"
     category: "system"
@@ -1434,7 +1689,7 @@ artifacts:
   - name: "Android Native Crash Tombstones"
     description: "Native-layer crash dumps with stack traces, register state and memory maps"
     paths:
-      - path: '^/data/tombstones/tombstone_[0-9]+$'
+      - path: "^/data/tombstones/tombstone_[0-9]+$"
         regexp: true
     tag: "logs"
     category: "system"
@@ -1442,8 +1697,9 @@ artifacts:
   - name: "Android ANR Traces"
     description: "Application Not Responding trace files generated during UI hang events"
     paths:
-      - "/data/anr/traces.txt"
-      - path: '^/data/anr/anr_[0-9_]+$'
+      - path: '^(?:/[^/]+)*/data/anr/traces\.txt$'
+        regexp: true
+      - path: "^(?:/[^/]+)*/data/anr/anr_[0-9_]+$"
         regexp: true
     tag: "logs"
     category: "system"
@@ -1451,7 +1707,7 @@ artifacts:
   - name: "Android Persistent Logcat Output"
     description: "Kernel and system logcat messages written to persistent storage where enabled"
     paths:
-      - path: '^/data/logs?/.*$'
+      - path: "^/data/logs?/.*$"
         regexp: true
     tag: "logs"
     category: "system"
@@ -1459,7 +1715,8 @@ artifacts:
   - name: "Android User Dictionary Database"
     description: "Custom words added to the on-screen keyboard dictionary"
     paths:
-      - "/data/data/com.android.providers.userdictionary/databases/user_dict.db"
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.userdictionary/databases/user_dict\.db$'
+        regexp: true
     tag: "user_activity"
     category: "users"
 
@@ -1484,113 +1741,154 @@ artifacts:
   - name: "Android Chrome Browser History"
     description: "Google Chrome browsing history, downloads and visit metadata"
     paths:
-      - "/data/data/com.android.chrome/app_chrome/Default/History"
-    tag: "browser"
-    category: "users"
+      - path: '^(?:/[^/]+)*/com\.android\.chrome/app_chrome/Default/History$'
+        regexp: true
+    tag: "Chrome"
+    category: "application"
 
   - name: "Android Samsung Internet Browser History"
     description: "Samsung Internet browser visiting history and download records"
     paths:
-      - "/data/data/com.sec.android.app.sbrowser/app_sbrowser/Default/History"
-    tag: "browser"
-    category: "users"
+      - path: '^(?:/[^/]+)*/com\.sec\.android\.app\.sbrowser/app_sbrowser/Default/History$'
+        regexp: true
+    tag: "Samsung Internet"
+    category: "application"
 
   - name: "Android Firefox History"
     description: "Mozilla Firefox (Firefox, Fenix, Focus) places.sqlite browsing history"
     paths:
       - path: '^/data/data/org\.mozilla\.(firefox|fenix|focus)/files/places\.sqlite$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Firefox"
+    category: "application"
 
   - name: "Android WhatsApp Databases"
     description: "WhatsApp message store (msgstore.db), contact map (wa.db) and encrypted backup databases"
     paths:
-      - "/data/data/com.whatsapp/databases/msgstore.db"
-      - "/data/data/com.whatsapp/databases/wa.db"
-      - path: '^/storage/emulated/0/Android/media/com\.whatsapp/WhatsApp/Databases/msgstore\.db(\.crypt1[245])?$'
+      - path: '^(?:/[^/]+)*/com\.whatsapp/databases/(msgstore|wa)\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+      - path: '^(?:/[^/]+)*/storage/emulated/[0-9]+/Android/media/com\.whatsapp/WhatsApp/Databases/msgstore\.db(\.crypt1[245])?$'
+        regexp: true
+    tag: "WhatsApp"
+    category: "application"
 
   - name: "Android Telegram Databases"
     description: "Telegram local message cache and account state database"
     paths:
       - path: '^/data/data/org\.telegram\.messenger/files/cache[0-9]+\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Telegram"
+    category: "application"
 
   - name: "Android Signal Database"
     description: "Signal encrypted message store, attachments index and identity key database"
     paths:
-      - "/data/data/org.thoughtcrime.securesms/databases/signal.db"
-    tag: "communications"
-    category: "users"
+      - path: '^(?:/[^/]+)*/org\.thoughtcrime\.securesms/databases/signal\.db$'
+        regexp: true
+    tag: "Signal"
+    category: "application"
 
   - name: "Android Facebook Messenger Databases"
     description: "Facebook Messenger conversation threads, media index and account preferences"
     paths:
       - path: '^/data/data/com\.facebook\.orca/databases/.*$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Facebook Messenger"
+    category: "application"
 
   - name: "Android Viber Databases"
     description: "Viber messaging and VoIP call records"
     paths:
-      - "/data/data/com.viber.voip/databases/viber_data"
-      - "/data/data/com.viber.voip/databases/viber_messages"
-    tag: "communications"
-    category: "users"
+      - path: '^(?:/[^/]+)*/com\.viber\.voip/databases/(viber_data|viber_messages)$'
+        regexp: true
+    tag: "Viber"
+    category: "application"
 
   - name: "Android Gmail Database"
     description: "Gmail message metadata, thread structures and label indexes"
     paths:
       - path: '^/data/data/com\.google\.android\.gm/databases/.*$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Gmail"
+    category: "application"
 
   - name: "Android Snapchat Databases"
     description: "Snapchat ephemeral message metadata, media references and account state"
     paths:
       - path: '^/data/data/com\.snapchat\.android/databases/.*$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Snapchat"
+    category: "application"
 
   - name: "Android Instagram Databases"
     description: "Instagram direct messages, media metadata and account data"
     paths:
       - path: '^/data/data/com\.instagram\.android/databases/.*$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "Instagram"
+    category: "application"
 
   - name: "Android TikTok Databases"
     description: "TikTok local message cache, viewed content and account preference artefacts"
     paths:
       - path: '^/data/data/com\.zhiliaoapp\.musically/databases/.*$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    tag: "TikTok"
+    category: "application"
 
   - name: "Android Google Maps Database"
     description: "Google Maps search history, navigation destinations and local cache"
     paths:
       - path: '^/data/data/com\.google\.android\.apps\.maps/databases/.*$'
         regexp: true
-    tag: "location"
-    category: "users"
+    tag: "Google Maps"
+    category: "application"
 
   - name: "Android Google Play Store Database"
     description: "Application install records, purchase history and update metadata"
     paths:
       - path: '^/data/data/com\.android\.vending/databases/.*$'
         regexp: true
-    tag: "packages"
-    category: "system"
+    tag: "Google Play"
+    category: "application"
+
+  - name: "Android WhatsApp Application Logs"
+    description: "WhatsApp application log files on internal and external storage"
+    paths:
+      - path: '^/data/(data/|user/[^/]+/|user_de/[^/]+/)?com\.whatsapp/files/[Ll]ogs/.*$'
+        regexp: true
+      - path: '^/storage/emulated/[0-9]+/Android/media/com\.whatsapp/WhatsApp/Logs/.*$'
+        regexp: true
+      - path: "^/sdcard/WhatsApp/Logs/.*$"
+        regexp: true
+    tag: "WhatsApp"
+    category: "application"
+
+  - name: "Android Signal Debug Logs"
+    description: "Signal application debug and export log files"
+    paths:
+      - path: '^/data/(data/|user/[^/]+/|user_de/[^/]+/)?org\.thoughtcrime\.securesms/files/.*\.log$'
+        regexp: true
+      - path: '^/storage/emulated/[0-9]+/(Signal/Logs/.*|Android/data/org\.thoughtcrime\.securesms/files/.*\.log)$'
+        regexp: true
+    tag: "Signal"
+    category: "application"
+
+  - name: "Android Telegram Application Logs"
+    description: "Telegram application log files for Telegram and Telegram X"
+    paths:
+      - path: '^/data/(data/|user/[^/]+/|user_de/[^/]+/)?org\.(telegram\.messenger|thunderdog\.challegram)/files/logs/.*$'
+        regexp: true
+    tag: "Telegram"
+    category: "application"
+
+  - name: "Android Discord Databases and Cache"
+    description: "Discord local message cache, channel history and account state databases including WebView storage"
+    paths:
+      - path: '^/data/(data/|user/[^/]+/|user_de/[^/]+/)?com\.discord/.*$'
+        regexp: true
+    tag: "Discord"
+    category: "application"
 
   # ---------------- Windows Artifacts (Extended) ----------------
 
@@ -1732,26 +2030,36 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Windows[\\/]WebCache[\\/]WebCacheV01\.dat$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Internet Explorer"
+    category: "application"
 
-  - name: "Windows Browser History – Chromium Family (Regex Normalized)"
-    description: "Chrome and Edge history across default and numbered profiles"
+  - name: "Windows Chrome History (Regex Normalized)"
+    description: "Google Chrome history across default and numbered profiles"
     paths:
-      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/](Google[\\/]Chrome|Microsoft[\\/]Edge)[\\/]User Data[\\/]Default[\\/]History$'
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Google[\\/]Chrome[\\/]User Data[\\/]Default[\\/]History$'
         regexp: true
-      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/](Google[\\/]Chrome|Microsoft[\\/]Edge)[\\/]User Data[\\/]Profile [0-9]+[\\/]History$'
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Google[\\/]Chrome[\\/]User Data[\\/]Profile [0-9]+[\\/]History$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Chrome"
+    category: "application"
+
+  - name: "Windows Edge History (Regex Normalized)"
+    description: "Microsoft Edge history across default and numbered profiles"
+    paths:
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Edge[\\/]User Data[\\/]Default[\\/]History$'
+        regexp: true
+      - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]Edge[\\/]User Data[\\/]Profile [0-9]+[\\/]History$'
+        regexp: true
+    tag: "Edge"
+    category: "application"
 
   - name: "Windows Firefox Places History (Regex Normalized)"
     description: "Firefox profile browsing and download metadata"
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Roaming[\\/]Mozilla[\\/]Firefox[\\/]Profiles[\\/][^\\/]+[\\/]places\.sqlite$'
         regexp: true
-    tag: "browser"
-    category: "users"
+    tag: "Firefox"
+    category: "application"
 
   - name: "Windows Startup Folder Items"
     description: "Startup folder executables/shortcuts used for logon persistence"
@@ -1842,7 +2150,7 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]ProgramData[\\/]Microsoft[\\/]Search[\\/]Data[\\/]Applications[\\/]Windows[\\/]Windows\.edb$'
         regexp: true
-    tag: "database"
+    tag: "Windows Search"
     category: "application"
 
   - name: "Windows Thumbcache and Iconcache"
@@ -1874,7 +2182,7 @@ artifacts:
     paths:
       - path: '(?i)^([A-Z]:)?[\\/]Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Microsoft[\\/]OneDrive[\\/]logs[\\/].+$'
         regexp: true
-    tag: "cloud"
+    tag: "OneDrive"
     category: "application"
 
   - name: "Windows Default RDP Connection File"

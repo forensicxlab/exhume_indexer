@@ -1,14 +1,20 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use exhume_artefacts::parsers::ParserRegistry;
-use exhume_artefacts::{ObjectParsed, Parser as ArtefactParser, ParserInput};
+use exhume_artefacts::{
+    CompanionPathRule, CompanionSpec, CompoundParserInput, ObjectParsed, Parser as ArtefactParser,
+    ParserFileProvider, ParserInput, ParserSource,
+};
 use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
 use exhume_filesystem::File;
 use exhume_filesystem::Filesystem;
 use regex::escape;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
+use sqlx::{Sqlite, Transaction};
 use std::fs;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -417,8 +423,8 @@ mod tests {
             bytes: Vec::new(),
         };
 
-        let objs =
-            extract_artefact(&mut fs, &parser, 7, "/empty.exe").expect("empty file should skip");
+        let objs = extract_artefact(&mut fs, &parser, None, None, 7, "/empty.exe", Vec::new())
+            .expect("empty file should skip");
 
         assert!(
             objs.is_empty(),
@@ -435,8 +441,16 @@ mod tests {
             bytes: vec![1, 2, 3],
         };
 
-        let objs = extract_artefact(&mut fs, &parser, 8, "/non-empty.exe")
-            .expect("non-empty file should be parsed");
+        let objs = extract_artefact(
+            &mut fs,
+            &parser,
+            None,
+            None,
+            8,
+            "/non-empty.exe",
+            Vec::new(),
+        )
+        .expect("non-empty file should be parsed");
 
         assert_eq!(objs.len(), 1, "non-empty files should still be parsed");
         assert_eq!(parser.calls(), 1, "parser should run for non-empty files");
@@ -507,6 +521,32 @@ pub async fn identify_artefacts(
     // Make identify pass idempotent for this partition.
     if let Err(err) = sqlx::query(
         r#"
+        DELETE FROM artifact_attachment_refs
+        WHERE evidence_id = ?
+          AND partition_id = ?;
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await
+    {
+        let msg = format!("Failed to clear existing attachment references: {err}");
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Error,
+                message: msg.clone(),
+            },
+        )
+        .await;
+        error!("{}", msg);
+        return;
+    }
+
+    if let Err(err) = sqlx::query(
+        r#"
         DELETE FROM artifact_objects
         WHERE evidence_id = ?
           AND partition_id = ?;
@@ -544,6 +584,33 @@ pub async fn identify_artefacts(
     .await
     {
         let msg = format!("Failed to clear existing artefacts: {err}");
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Error,
+                message: msg.clone(),
+            },
+        )
+        .await;
+        error!("{}", msg);
+        return;
+    }
+
+    if let Err(err) = sqlx::query(
+        r#"
+        DELETE FROM timeline_events
+        WHERE evidence_id = ?
+          AND partition_id = ?
+          AND artifact_object_id IS NOT NULL;
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .execute(pool)
+    .await
+    {
+        let msg = format!("Failed to clear existing artifact timeline events: {err}");
         send_progress(
             &tx_progress,
             IndexerEvent {
@@ -713,8 +780,11 @@ pub async fn identify_artefacts(
 fn extract_artefact<F: Filesystem>(
     fs: &mut F,
     parser: &dyn ArtefactParser,
+    artifact_id: Option<i64>,
+    system_file_id: Option<i64>,
     fs_identifier: u64,
     absolute_path: &str,
+    companions: Vec<ParserSource>,
 ) -> Result<Vec<ObjectParsed>>
 where
     F::FileType: FileCommon,
@@ -737,9 +807,6 @@ where
         return Ok(Vec::new());
     }
 
-    // Adapter: Read+Seek backed by Filesystem::read_file_slice
-    let rs = FsFileReadSeek::new(fs, record);
-
     // Collect parsed objects
     let mut out: Vec<ObjectParsed> = Vec::new();
     let mut sink = |obj: ObjectParsed| -> Result<()> {
@@ -747,8 +814,393 @@ where
         Ok(())
     };
 
-    parser.run_into(ParserInput::ReadSeek(Box::new(rs)), &mut sink)?;
+    if parser.companion_specs().is_empty() {
+        // Adapter: Read+Seek backed by Filesystem::read_file_slice
+        let rs = FsFileReadSeek::new(fs, record);
+        parser.run_into(ParserInput::ReadSeek(Box::new(rs)), &mut sink)?;
+    } else {
+        let primary = ParserSource::new(
+            "primary",
+            absolute_path,
+            artifact_id,
+            system_file_id,
+            Some(fs_identifier),
+        );
+        let input = ParserInput::Compound(CompoundParserInput {
+            primary,
+            companions,
+            provider: Box::new(FilesystemParserFileProvider { fs }),
+        });
+        parser.run_into(input, &mut sink)?;
+    }
+
     Ok(out)
+}
+
+struct FilesystemParserFileProvider<'a, F>
+where
+    F: Filesystem,
+    F::FileType: FileCommon,
+{
+    fs: &'a mut F,
+}
+
+impl<F> ParserFileProvider for FilesystemParserFileProvider<'_, F>
+where
+    F: Filesystem,
+    F::FileType: FileCommon,
+{
+    fn copy_to(&mut self, source: &ParserSource, writer: &mut dyn Write) -> Result<()> {
+        let record = match source.fs_identifier {
+            Some(identifier) => match self.fs.get_file(identifier) {
+                Ok(record) => record,
+                Err(_) => self
+                    .fs
+                    .get_file_by_path(&source.original_path, identifier)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?,
+            },
+            None => self
+                .fs
+                .get_file_by_path(&source.original_path, 0)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?,
+        };
+
+        let mut reader = FsFileReadSeek::new(self.fs, record);
+        std::io::copy(&mut reader, writer).with_context(|| {
+            format!(
+                "failed to copy parser source '{}' ({})",
+                source.role, source.original_path
+            )
+        })?;
+        Ok(())
+    }
+}
+
+async fn resolve_companion_sources(
+    tx: &mut Transaction<'_, Sqlite>,
+    evidence_id: i64,
+    partition_id: i64,
+    primary_path: &str,
+    specs: &[CompanionSpec],
+) -> Result<Vec<ParserSource>> {
+    let mut companions = Vec::new();
+
+    for spec in specs {
+        let candidate_path = match spec.path_rule {
+            CompanionPathRule::Suffix(suffix) => format!("{primary_path}{suffix}"),
+            CompanionPathRule::Sibling(filename) => match primary_path.rfind('/') {
+                Some(idx) => format!("{}{}", &primary_path[..=idx], filename),
+                None => filename.to_string(),
+            },
+        };
+
+        let row = sqlx::query(
+            r#"
+            SELECT
+                sf.id AS system_file_id,
+                sf.identifier AS fs_identifier,
+                sf.absolute_path AS absolute_path,
+                a.id AS artifact_id
+            FROM system_files sf
+            LEFT JOIN artifacts a
+              ON a.evidence_id = sf.evidence_id
+             AND a.partition_id = sf.partition_id
+             AND a.file_id = sf.id
+            WHERE sf.evidence_id = ?
+              AND sf.partition_id = ?
+              AND sf.absolute_path = ?
+            ORDER BY a.id
+            LIMIT 1;
+            "#,
+        )
+        .bind(evidence_id)
+        .bind(partition_id)
+        .bind(&candidate_path)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let artifact_id: Option<i64> = row.try_get("artifact_id")?;
+                let system_file_id: i64 = row.try_get("system_file_id")?;
+                let fs_identifier: i64 = row.try_get("fs_identifier")?;
+                let absolute_path: String = row.try_get("absolute_path")?;
+                companions.push(ParserSource::new(
+                    spec.role,
+                    absolute_path,
+                    artifact_id,
+                    Some(system_file_id),
+                    Some(fs_identifier as u64),
+                ));
+            }
+            None if spec.required => {
+                anyhow::bail!(
+                    "required companion '{}' not found for {} at {}",
+                    spec.role,
+                    primary_path,
+                    candidate_path
+                );
+            }
+            None => {}
+        }
+    }
+
+    Ok(companions)
+}
+
+#[derive(Debug)]
+struct ResolvedAttachmentFile {
+    id: i64,
+    identifier: i64,
+    absolute_path: String,
+    host_path: Option<String>,
+    sig_mime: Option<String>,
+    name: Option<String>,
+    size: Option<i64>,
+}
+
+async fn insert_attachment_ref(
+    tx: &mut Transaction<'_, Sqlite>,
+    evidence_id: i64,
+    partition_id: i64,
+    artifact_object_id: i64,
+    parser: &str,
+    object_json: &Value,
+) -> Result<()> {
+    let local_path = json_string(object_json, &["media", "local_path"])
+        .or_else(|| json_string(object_json, &["attachment", "local_path"]));
+    let source_path = json_string(object_json, &["source", "path"]);
+    let kind = json_string(object_json, &["attachment", "kind"]);
+    let is_location = kind.as_deref() == Some("location");
+    let resolved = match local_path.as_deref() {
+        Some(path) => {
+            resolve_attachment_file(tx, evidence_id, partition_id, source_path.as_deref(), path)
+                .await?
+        }
+        None => None,
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO artifact_attachment_refs (
+            evidence_id,
+            partition_id,
+            artifact_object_id,
+            parser,
+            app,
+            platform,
+            media_rowid,
+            message_rowid,
+            chat_rowid,
+            local_path,
+            thumbnail_local_path,
+            remote_url,
+            title,
+            kind,
+            mime,
+            file_name,
+            file_size,
+            duration_seconds,
+            width,
+            height,
+            latitude,
+            longitude,
+            resolved_file_id,
+            resolved_fs_identifier,
+            resolved_absolute_path,
+            resolved_host_path,
+            resolved_sig_mime,
+            resolved_name,
+            resolved_size,
+            preview_mime,
+            preview_base64,
+            json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .bind(artifact_object_id)
+    .bind(parser)
+    .bind(json_string(object_json, &["app"]))
+    .bind(json_string(object_json, &["platform"]))
+    .bind(json_i64(object_json, &["media", "rowid"]))
+    .bind(json_i64(object_json, &["message", "rowid"]))
+    .bind(json_i64(object_json, &["chat", "rowid"]))
+    .bind(local_path)
+    .bind(json_string(object_json, &["media", "thumbnail_local_path"]))
+    .bind(json_string(object_json, &["media", "url"]))
+    .bind(json_string(object_json, &["media", "title"]))
+    .bind(kind)
+    .bind(json_string(object_json, &["attachment", "mime"]))
+    .bind(json_string(object_json, &["attachment", "file_name"]))
+    .bind(json_i64(object_json, &["media", "file_size"]))
+    .bind(json_f64(object_json, &["media", "movie_duration"]))
+    .bind(json_i64(object_json, &["media", "width"]))
+    .bind(json_i64(object_json, &["media", "height"]))
+    .bind(if is_location {
+        json_f64(object_json, &["media", "location", "latitude"])
+    } else {
+        None
+    })
+    .bind(if is_location {
+        json_f64(object_json, &["media", "location", "longitude"])
+    } else {
+        None
+    })
+    .bind(resolved.as_ref().map(|file| file.id))
+    .bind(resolved.as_ref().map(|file| file.identifier))
+    .bind(resolved.as_ref().map(|file| file.absolute_path.clone()))
+    .bind(resolved.as_ref().and_then(|file| file.host_path.clone()))
+    .bind(resolved.as_ref().and_then(|file| file.sig_mime.clone()))
+    .bind(resolved.as_ref().and_then(|file| file.name.clone()))
+    .bind(resolved.as_ref().and_then(|file| file.size))
+    .bind(json_string(object_json, &["preview", "mime"]))
+    .bind(json_string(object_json, &["preview", "data"]))
+    .bind(object_json.to_string())
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+async fn resolve_attachment_file(
+    tx: &mut Transaction<'_, Sqlite>,
+    evidence_id: i64,
+    partition_id: i64,
+    source_path: Option<&str>,
+    local_path: &str,
+) -> Result<Option<ResolvedAttachmentFile>> {
+    let root = source_root(source_path).unwrap_or_default();
+    let candidate_message = format!("{root}/Message/{local_path}");
+    let candidate_root = format!("{root}/{local_path}");
+    let candidate_shared_message =
+        format!("{root}/net.whatsapp.WhatsApp.shared/Message/{local_path}");
+    let candidate_shared = format!("{root}/net.whatsapp.WhatsApp.shared/{local_path}");
+    let suffix_pattern = format!("%/{}", escape_sql_like(local_path));
+
+    let row = sqlx::query(
+        r#"
+        SELECT
+            id,
+            identifier,
+            absolute_path,
+            host_path,
+            sig_mime,
+            name,
+            size
+        FROM system_files
+        WHERE evidence_id = ?
+          AND partition_id = ?
+          AND is_dir = 0
+          AND (
+            absolute_path = ?
+            OR absolute_path = ?
+            OR absolute_path = ?
+            OR absolute_path = ?
+            OR absolute_path LIKE ? ESCAPE '\'
+          )
+        ORDER BY
+          CASE
+            WHEN absolute_path = ? THEN 0
+            WHEN absolute_path = ? THEN 1
+            WHEN absolute_path = ? THEN 2
+            WHEN absolute_path = ? THEN 3
+            ELSE 4
+          END,
+          LENGTH(absolute_path) ASC
+        LIMIT 1;
+        "#,
+    )
+    .bind(evidence_id)
+    .bind(partition_id)
+    .bind(&candidate_message)
+    .bind(&candidate_root)
+    .bind(&candidate_shared_message)
+    .bind(&candidate_shared)
+    .bind(&suffix_pattern)
+    .bind(&candidate_message)
+    .bind(&candidate_root)
+    .bind(&candidate_shared_message)
+    .bind(&candidate_shared)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    row.map(|row| {
+        Ok(ResolvedAttachmentFile {
+            id: row.try_get("id")?,
+            identifier: row.try_get("identifier")?,
+            absolute_path: row.try_get("absolute_path")?,
+            host_path: row.try_get("host_path")?,
+            sig_mime: row.try_get("sig_mime")?,
+            name: row.try_get("name")?,
+            size: row.try_get("size")?,
+        })
+    })
+    .transpose()
+}
+
+fn source_root(path: Option<&str>) -> Option<String> {
+    let path = path?;
+    for suffix in [
+        "/net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
+        "/ChatStorage.sqlite",
+    ] {
+        if let Some(root) = path.strip_suffix(suffix) {
+            return Some(root.to_string());
+        }
+    }
+
+    None
+}
+
+fn escape_sql_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn json_string(value: &Value, path: &[&str]) -> Option<String> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+
+    match current {
+        Value::String(value) if !value.trim().is_empty() => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn json_i64(value: &Value, path: &[&str]) -> Option<i64> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+
+    current
+        .as_i64()
+        .or_else(|| current.as_u64().and_then(|value| i64::try_from(value).ok()))
+        .or_else(|| {
+            current
+                .as_str()
+                .and_then(|value| value.trim().parse::<i64>().ok())
+        })
+}
+
+fn json_f64(value: &Value, path: &[&str]) -> Option<f64> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+
+    current.as_f64().or_else(|| {
+        current
+            .as_str()
+            .and_then(|value| value.trim().parse::<f64>().ok())
+    })
 }
 
 pub async fn extract_artefacts<F: Filesystem>(
@@ -892,7 +1344,44 @@ pub async fn extract_artefacts<F: Filesystem>(
             }
         };
 
-        let objs = match extract_artefact(fs, &**parser, fs_identifier_i64 as u64, &abs_path) {
+        let companions = match resolve_companion_sources(
+            &mut tx,
+            evidence_id,
+            partition_id,
+            &abs_path,
+            parser.companion_specs(),
+        )
+        .await
+        {
+            Ok(companions) => companions,
+            Err(e) => {
+                let msg = format!(
+                    "Failed to resolve parser companions (parser={}, file={}): {e:?}",
+                    parser_name, abs_path
+                );
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Error,
+                        message: msg.clone(),
+                    },
+                )
+                .await;
+                error!("{}", msg);
+                continue;
+            }
+        };
+
+        let objs = match extract_artefact(
+            fs,
+            &**parser,
+            Some(artifact_id),
+            file_id,
+            fs_identifier_i64 as u64,
+            &abs_path,
+            companions,
+        ) {
             Ok(v) => v,
             Err(e) => {
                 let msg = format!(
@@ -916,7 +1405,16 @@ pub async fn extract_artefacts<F: Filesystem>(
         for obj in objs {
             emitted_objects += 1;
 
-            if let Err(e) = sqlx::query(
+            // Must be called before obj fields are moved out below.
+            let tl_events = parser.extract_timeline_events(&obj);
+
+            let object_parser = obj.parser;
+            let object_kind = obj.kind;
+            let object_text = obj.text;
+            let object_json = obj.json;
+            let object_json_text = object_json.to_string();
+
+            let insert_result = sqlx::query(
                 r#"
                 INSERT INTO artifact_objects (
                     evidence_id,
@@ -934,24 +1432,81 @@ pub async fn extract_artefacts<F: Filesystem>(
             .bind(partition_id)
             .bind(artifact_id)
             .bind(file_id)
-            .bind(obj.parser)
-            .bind(obj.kind)
-            .bind(obj.text)
-            .bind(obj.json.to_string())
+            .bind(object_parser)
+            .bind(object_kind)
+            .bind(object_text)
+            .bind(&object_json_text)
             .execute(&mut *tx)
-            .await
-            {
-                let msg = format!("DB insert error for parsed object: {e:?}");
-                send_progress(
-                    &tx_progress,
-                    IndexerEvent {
-                        evidence_id,
-                        event_type: IndexerEventType::Error,
-                        message: msg.clone(),
-                    },
+            .await;
+
+            let insert_result = match insert_result {
+                Ok(result) => result,
+                Err(e) => {
+                    let msg = format!("DB insert error for parsed object: {e:?}");
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Error,
+                            message: msg.clone(),
+                        },
+                    )
+                    .await;
+                    error!("{}", msg);
+                    continue;
+                }
+            };
+
+            let artifact_object_id = insert_result.last_insert_rowid();
+
+            for tl_event in tl_events {
+                if let Err(e) = sqlx::query(
+                    r#"
+                    INSERT INTO timeline_events (
+                        evidence_id, partition_id, ts, source, event_type,
+                        description, file_id, artifact_object_id, actor
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
                 )
-                .await;
-                error!("{}", msg);
+                .bind(evidence_id)
+                .bind(partition_id)
+                .bind(tl_event.ts_unix_ms)
+                .bind(object_parser)
+                .bind(tl_event.event_type)
+                .bind(tl_event.description)
+                .bind(file_id)
+                .bind(artifact_object_id)
+                .bind(tl_event.actor)
+                .execute(&mut *tx)
+                .await
+                {
+                    error!("Timeline event insert error (parser={object_parser}): {e:?}");
+                }
+            }
+
+            if object_kind == "mobile.communication.attachment" {
+                if let Err(e) = insert_attachment_ref(
+                    &mut tx,
+                    evidence_id,
+                    partition_id,
+                    artifact_object_id,
+                    object_parser,
+                    &object_json,
+                )
+                .await
+                {
+                    let msg = format!("DB insert error for attachment reference: {e:?}");
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Error,
+                            message: msg.clone(),
+                        },
+                    )
+                    .await;
+                    error!("{}", msg);
+                }
             }
         }
 
