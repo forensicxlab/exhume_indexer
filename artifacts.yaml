@@ -836,10 +836,11 @@ artifacts:
   - name: "macOS LaunchDaemons and System LaunchAgents"
     description: "System-wide launchd persistence definitions"
     paths:
-      - path: '^/(System/Library|Library)/LaunchDaemons/.*\.plist$'
+      - path: '^(/Library/Apple)?/(System/Library|Library)/LaunchDaemons/.*\.plist$'
         regexp: true
-      - path: '^/(System/Library|Library)/LaunchAgents/.*\.plist$'
+      - path: '^(/Library/Apple)?/(System/Library|Library)/LaunchAgents/.*\.plist$'
         regexp: true
+    parser: "macos_launchd"
     tag: "persistence"
     category: "system"
 
@@ -848,6 +849,7 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/LaunchAgents/.*\.plist$'
         regexp: true
+    parser: "macos_launchd"
     tag: "persistence"
     category: "users"
 
@@ -898,6 +900,11 @@ artifacts:
       - "/Library/Preferences/com.apple.loginwindow.plist"
       - path: '^/Users/[^/]+/Library/Preferences/com.apple.loginwindow\.plist$'
         regexp: true
+      - path: '^/Users/[^/]+/Library/Preferences/ByHost/com\.apple\.loginwindow\.[^/]+\.plist$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Preferences/loginwindow\.plist$'
+        regexp: true
+    parser: "macos_loginwindow"
     tag: "config"
     category: "users"
 
@@ -913,17 +920,41 @@ artifacts:
   - name: "macOS Quarantine Events Database"
     description: "Gatekeeper quarantine records for downloaded items"
     paths:
-      - path: "^/Users/[^/]+/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2$"
+      - path: '^/Users/[^/]+/Library/Preferences/com\.apple\.LaunchServices\.QuarantineEventsV2$'
+        regexp: true
+    parser: "macos_quarantine"
+    tag: "security"
+    category: "users"
+
+  - name: "macOS Quarantine Events Companion Files"
+    description: "QuarantineEventsV2 WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: '^/Users/[^/]+/Library/Preferences/com\.apple\.LaunchServices\.QuarantineEventsV2-(wal|shm)$'
         regexp: true
     tag: "security"
     category: "users"
 
   - name: "macOS Spotlight Metadata Store"
-    description: "Spotlight indexing database containing searchable file metadata"
+    description: "Primary Spotlight Store-V2 database containing searchable file metadata"
     paths:
-      - path: '^/\.Spotlight-V100/Store-V2/.*$'
+      - path: '^/\.Spotlight-V100/Store-V2/[^/]+/store\.db$'
         regexp: true
-      - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/.*$'
+      - path: '^/private/var/db/Spotlight-V100/(?:[^/]+/)*Store-V2/[^/]+/store\.db$'
+        regexp: true
+      - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/[^/]+/store\.db$'
+        regexp: true
+    parser: "macos_spotlight"
+    tag: "filesystem"
+    category: "system"
+
+  - name: "macOS Spotlight Store Support Files"
+    description: "Alternate Spotlight database generation and dbStr definition maps used as Store-V2 parser companions"
+    paths:
+      - path: '^/\.Spotlight-V100/Store-V2/[^/]+/(?:\.store\.db|dbStr-[1245]\.map\.(?:header|offsets|data|buckets))$'
+        regexp: true
+      - path: '^/private/var/db/Spotlight-V100/(?:[^/]+/)*Store-V2/[^/]+/(?:\.store\.db|dbStr-[1245]\.map\.(?:header|offsets|data|buckets))$'
+        regexp: true
+      - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/[^/]+/(?:\.store\.db|dbStr-[1245]\.map\.(?:header|offsets|data|buckets))$'
         regexp: true
     tag: "filesystem"
     category: "system"
@@ -940,6 +971,15 @@ artifacts:
     description: "Safari browsing and download metadata"
     paths:
       - path: '^/Users/[^/]+/Library/Safari/History\.db$'
+        regexp: true
+    parser: "macos_safari"
+    tag: "Safari"
+    category: "application"
+
+  - name: "macOS Safari History Companion Files"
+    description: "Safari History.db WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: '^/Users/[^/]+/Library/Safari/History\.db-(wal|shm)$'
         regexp: true
     tag: "Safari"
     category: "application"
@@ -969,6 +1009,15 @@ artifacts:
         regexp: true
       - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium)/Profile [0-9]+/History$"
         regexp: true
+    parser: "macos_chromium"
+    tag: "Chrome"
+    category: "application"
+
+  - name: "macOS Chrome and Chromium History Companion Files"
+    description: "Chrome/Chromium History WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/(Google/Chrome|Chromium)/(Default|Profile [0-9]+)/History-(wal|shm)$"
+        regexp: true
     tag: "Chrome"
     category: "application"
 
@@ -978,6 +1027,15 @@ artifacts:
       - path: "^/Users/[^/]+/Library/Application Support/Microsoft Edge/Default/History$"
         regexp: true
       - path: "^/Users/[^/]+/Library/Application Support/Microsoft Edge/Profile [0-9]+/History$"
+        regexp: true
+    parser: "macos_chromium"
+    tag: "Edge"
+    category: "application"
+
+  - name: "macOS Microsoft Edge History Companion Files"
+    description: "Microsoft Edge History WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/Microsoft Edge/(Default|Profile [0-9]+)/History-(wal|shm)$"
         regexp: true
     tag: "Edge"
     category: "application"
@@ -989,6 +1047,15 @@ artifacts:
         regexp: true
       - path: "^/Users/[^/]+/Library/Application Support/BraveSoftware/Brave-Browser/Profile [0-9]+/History$"
         regexp: true
+    parser: "macos_chromium"
+    tag: "Brave"
+    category: "application"
+
+  - name: "macOS Brave History Companion Files"
+    description: "Brave History WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: "^/Users/[^/]+/Library/Application Support/BraveSoftware/Brave-Browser/(Default|Profile [0-9]+)/History-(wal|shm)$"
+        regexp: true
     tag: "Brave"
     category: "application"
 
@@ -996,6 +1063,15 @@ artifacts:
     description: "Firefox profile history and download metadata"
     paths:
       - path: '^/Users/[^/]+/Library/Application Support/Firefox/Profiles/[^/]+/places\.sqlite$'
+        regexp: true
+    parser: "macos_firefox"
+    tag: "Firefox"
+    category: "application"
+
+  - name: "macOS Firefox Places History Companion Files"
+    description: "Firefox places.sqlite WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: '^/Users/[^/]+/Library/Application Support/Firefox/Profiles/[^/]+/places\.sqlite-(wal|shm)$'
         regexp: true
     tag: "Firefox"
     category: "application"
@@ -1005,7 +1081,37 @@ artifacts:
     paths:
       - path: '^/Users/[^/]+/Library/Messages/chat\.db$'
         regexp: true
+    parser: "macos_imessage"
     tag: "iMessage"
+    category: "application"
+
+  - name: "macOS iMessage Companion Files and Attachments"
+    description: "Messages chat.db WAL/SHM sidecars and attachment files referenced by chat.db"
+    paths:
+      - path: '^/Users/[^/]+/Library/Messages/chat\.db-(wal|shm)$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Messages/Attachments/.*$'
+        regexp: true
+    tag: "iMessage"
+    category: "application"
+
+  - name: "macOS WhatsApp ChatStorage Database"
+    description: "WhatsApp desktop message store (Core Data ChatStorage.sqlite) in the shared group container"
+    paths:
+      - path: '^/Users/[^/]+/Library/Group Containers/group\.net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite$'
+        regexp: true
+    parser: "macos_whatsapp"
+    tag: "WhatsApp"
+    category: "application"
+
+  - name: "macOS WhatsApp Companion Files and Media"
+    description: "WhatsApp desktop ChatStorage WAL/SHM sidecars and referenced media files"
+    paths:
+      - path: '^/Users/[^/]+/Library/Group Containers/group\.net\.whatsapp\.WhatsApp\.shared/ChatStorage\.sqlite-(wal|shm)$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Group Containers/group\.net\.whatsapp\.WhatsApp\.shared/Message/Media/.*$'
+        regexp: true
+    tag: "WhatsApp"
     category: "application"
 
   - name: "macOS Call History Database"
@@ -1025,12 +1131,49 @@ artifacts:
     category: "users"
 
   - name: "macOS SharedFileList Recent Items"
-    description: "Recent documents/items lists in SFL/SFL2 format"
+    description: "Recent documents/applications/volumes lists in SFL/SFL2/SFL3 (NSKeyedArchiver bookmark) format"
     paths:
-      - path: '^/Users/[^/]+/Library/Application Support/com.apple.sharedfilelist/.*\.(sfl|sfl2)$'
+      - path: '^/Users/[^/]+/Library/Application Support/com.apple.sharedfilelist/.*\.(sfl|sfl2|sfl3)$'
         regexp: true
+      - path: '^/Users/[^/]+/Library/Application Support/[^/]+/com.apple.sharedfilelist/.*\.(sfl|sfl2|sfl3)$'
+        regexp: true
+    parser: "macos_sharedfilelist"
     tag: "user_activity"
     category: "users"
+
+  - name: "macOS User Keychains"
+    description: "Per-user legacy CSSM keychains (login/metadata) and modern SQLite keychain-2.db; item metadata only (secrets stay encrypted)"
+    paths:
+      - path: '^/Users/[^/]+/Library/Keychains/[^/]+\.keychain-db$'
+        regexp: true
+      - path: '^/Users/[^/]+/Library/Keychains/[^/]+/keychain-2\.db$'
+        regexp: true
+    parser: "macos_keychain"
+    tag: "keychain"
+    category: "users"
+
+  - name: "macOS System Keychains"
+    description: "System-level CSSM keychains and modern keychain-2.db; item metadata only"
+    paths:
+      - path: '^/Library/Keychains/[^/]+\.keychain$'
+        regexp: true
+      - path: '^/Library/Keychains/[^/]+/keychain-2\.db$'
+        regexp: true
+      - path: '^/private/var/db/Keychains/[^/]+/keychain-2\.db$'
+        regexp: true
+    parser: "macos_keychain"
+    tag: "keychain"
+    category: "system"
+
+  - name: "macOS Keychain Companion Files"
+    description: "Modern keychain-2.db WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: '^/Users/[^/]+/Library/Keychains/[^/]+/keychain-2\.db-(wal|shm)$'
+        regexp: true
+      - path: '^/(Library|private/var/db)/Keychains/[^/]+/keychain-2\.db-(wal|shm)$'
+        regexp: true
+    tag: "keychain"
+    category: "system"
 
   - name: "macOS QuickLook Thumbnail Cache"
     description: "QuickLook thumbnail database of previewed files"
@@ -1064,14 +1207,19 @@ artifacts:
       - "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist"
       - "/Library/Preferences/SystemConfiguration/preferences.plist"
       - "/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist"
+      - "/Library/Preferences/com.apple.wifi.known-networks.plist"
+      - path: '^/Library/Preferences/SystemConfiguration/(NetworkInterfaces|preferences)-pre-upgrade-(source|new-target)\.plist$'
+        regexp: true
+    parser: "macos_network"
     tag: "network"
     category: "network"
 
   - name: "macOS DHCP Client Leases"
     description: "Host lease records containing assigned IP/DNS/router data"
     paths:
-      - path: "^/private/var/db/dhcpclient/leases/.*$"
+      - path: '^/private/var/db/dhcpclient/leases/[^/]+\.plist$'
         regexp: true
+    parser: "macos_network"
     tag: "network"
     category: "network"
 
@@ -1545,8 +1693,17 @@ artifacts:
     paths:
       - path: '^(?:/[^/]+)*/com\.android\.providers\.telephony/databases/mmssms\.db$'
         regexp: true
-    tag: "communications"
-    category: "users"
+    parser: "mobile_android_sms"
+    tag: "SMS"
+    category: "application"
+
+  - name: "Android SMS Companion Files"
+    description: "Telephony message store WAL/SHM sidecars"
+    paths:
+      - path: '^(?:/[^/]+)*/com\.android\.providers\.telephony/databases/mmssms\.db-(shm|wal)$'
+        regexp: true
+    tag: "SMS"
+    category: "application"
 
   - name: "Android Telephony Database"
     description: "Carrier, SIM and subscription metadata including IMSI and ICCID records"

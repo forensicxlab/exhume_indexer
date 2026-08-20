@@ -21,10 +21,44 @@ pub const ARTIFACTS_YAML: &str = include_str!("../artifacts.yaml");
 #[derive(Debug, Clone)]
 pub enum IndexerEventType {
     Info,
-    Progress { current: u64, total: u64 },
+    Progress {
+        current: u64,
+        total: u64,
+    },
+    ParserProgress {
+        current: u64,
+        total: u64,
+        parser: String,
+        file_path: String,
+        artifact_id: i64,
+        file_id: Option<i64>,
+        phase: ParserProgressPhase,
+        elapsed_ms: Option<u64>,
+        setup_ms: Option<u64>,
+        parse_ms: Option<u64>,
+        persistence_ms: Option<u64>,
+        objects_emitted: Option<u64>,
+    },
     Success,
     Warning,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParserProgressPhase {
+    Started,
+    Completed,
+    Failed,
+}
+
+impl ParserProgressPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -904,8 +938,16 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             ON artifact_objects (artifact_id);
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_file
             ON artifact_objects (file_id);
+        CREATE INDEX IF NOT EXISTS idx_artifact_objects_scope_file_id
+            ON artifact_objects (evidence_id, partition_id, file_id, id);
         CREATE INDEX IF NOT EXISTS idx_artifact_objects_parser_kind
             ON artifact_objects (parser, kind);
+        CREATE INDEX IF NOT EXISTS idx_artifact_objects_scope_parser_kind
+            ON artifact_objects (evidence_id, partition_id, parser, kind, id);
+        CREATE INDEX IF NOT EXISTS idx_artifact_objects_scope_kind
+            ON artifact_objects (evidence_id, partition_id, kind, artifact_id, id);
+        CREATE INDEX IF NOT EXISTS idx_artifacts_scope_category_tag_parser
+            ON artifacts (evidence_id, partition_id, category, tag, parser, id);
         CREATE INDEX IF NOT EXISTS idx_attachment_refs_message
             ON artifact_attachment_refs (evidence_id, partition_id, parser, message_rowid);
         CREATE INDEX IF NOT EXISTS idx_attachment_refs_chat

@@ -4,23 +4,25 @@ use exhume_artefacts::{
     CompanionPathRule, CompanionSpec, CompoundParserInput, ObjectParsed, Parser as ArtefactParser,
     ParserFileProvider, ParserInput, ParserSource,
 };
-use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
 use exhume_filesystem::File;
 use exhume_filesystem::Filesystem;
+use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
 use regex::escape;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
+use sqlx::sqlite::SqlitePool;
 use sqlx::{Sqlite, Transaction};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-use crate::{send_progress, IndexerEvent, IndexerEventType};
+use crate::{IndexerEvent, IndexerEventType, ParserProgressPhase, send_progress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -116,10 +118,15 @@ fn infer_platform(paths: &[ArtifactPath]) -> &'static str {
         {
             return "Android";
         }
-        // macOS: /private/ hierarchy or /Library/ or /Volumes/
+        // macOS: /private/ hierarchy, Apple library/volume paths, and
+        // filesystem-root stores whose names are unique to macOS.
         if p.contains("/private/")
             || (p.contains("Library/") && !p.contains('\\'))
             || p.contains("/Volumes/")
+            || p.contains("/.Spotlight-V100/")
+            || p.contains("/\\.Spotlight-V100/")
+            || p.contains("/.fseventsd/")
+            || p.contains("/\\.fseventsd/")
         {
             return "macOS";
         }
@@ -199,12 +206,17 @@ fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::E
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_artefact, ArtifactSet};
+    use super::{
+        ArtifactPath, ArtifactSet, attachment_local_path, attachment_path_candidates,
+        extract_artefact, infer_platform, resolve_attachment_file, resolve_attachment_files_batch,
+        strip_apfs_volume_namespace,
+    };
     use anyhow::Result;
     use exhume_artefacts::{ObjectParsed, Parser};
-    use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, Filesystem};
     use exhume_filesystem::File as ExhumeFile;
-    use serde_json::{json, Value};
+    use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, Filesystem};
+    use serde_json::{Value, json};
+    use sqlx::sqlite::SqlitePoolOptions;
     use std::error::Error;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -404,6 +416,42 @@ mod tests {
         }
     }
 
+    struct SourceAwareParser;
+
+    impl Parser for SourceAwareParser {
+        fn name(&self) -> &'static str {
+            "source_aware_test_parser"
+        }
+
+        fn requires_source_metadata(&self) -> bool {
+            true
+        }
+
+        fn run_into(
+            &self,
+            input: exhume_artefacts::ParserInput,
+            sink: &mut dyn FnMut(ObjectParsed) -> Result<()>,
+        ) -> Result<()> {
+            let exhume_artefacts::ParserInput::Compound(mut input) = input else {
+                anyhow::bail!("source-aware parser did not receive compound input");
+            };
+            let mut bytes = Vec::new();
+            input.provider.copy_to(&input.primary, &mut bytes)?;
+            sink(ObjectParsed {
+                parser: self.name(),
+                kind: "test.source_aware",
+                text: input.primary.original_path.clone(),
+                json: json!({
+                    "path": input.primary.original_path,
+                    "artifact_id": input.primary.artifact_id,
+                    "system_file_id": input.primary.system_file_id,
+                    "fs_identifier": input.primary.fs_identifier,
+                    "bytes": bytes,
+                }),
+            })
+        }
+    }
+
     #[test]
     fn embedded_artifacts_yaml_parses() {
         let yaml = include_str!("../artifacts.yaml");
@@ -412,6 +460,25 @@ mod tests {
         assert!(
             !artifact_set.artifacts.is_empty(),
             "embedded artifacts.yaml should contain entries"
+        );
+    }
+
+    #[test]
+    fn embedded_parser_bindings_exist_in_registry() {
+        let artifact_set = ArtifactSet::from_yaml_str(include_str!("../artifacts.yaml"))
+            .expect("embedded artifacts.yaml should parse");
+        let registry = exhume_artefacts::parsers::build_registry();
+        let mut missing = artifact_set
+            .artifacts
+            .iter()
+            .filter_map(|artifact| artifact.parser.as_deref())
+            .filter(|parser| !registry.contains_key(parser))
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        missing.dedup();
+        assert!(
+            missing.is_empty(),
+            "catalog references unregistered parsers: {missing:?}"
         );
     }
 
@@ -455,6 +522,428 @@ mod tests {
         assert_eq!(objs.len(), 1, "non-empty files should still be parsed");
         assert_eq!(parser.calls(), 1, "parser should run for non-empty files");
     }
+
+    #[test]
+    fn source_aware_parser_receives_primary_provenance_without_companions() {
+        let mut fs = TestFilesystem {
+            file: TestFile { id: 9, size: 3 },
+            bytes: vec![4, 5, 6],
+        };
+
+        let objects = extract_artefact(
+            &mut fs,
+            &SourceAwareParser,
+            Some(41),
+            Some(42),
+            9,
+            "/volume_0/Library/LaunchDaemons/example.plist",
+            Vec::new(),
+        )
+        .expect("source-aware parser should receive compound primary input");
+
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].json["artifact_id"], 41);
+        assert_eq!(objects[0].json["system_file_id"], 42);
+        assert_eq!(objects[0].json["fs_identifier"], 9);
+        assert_eq!(objects[0].json["bytes"], json!([4, 5, 6]));
+        assert_eq!(
+            objects[0].json["path"],
+            "/volume_0/Library/LaunchDaemons/example.plist"
+        );
+    }
+
+    #[test]
+    fn strips_one_numeric_apfs_volume_namespace() {
+        assert_eq!(
+            strip_apfs_volume_namespace("/volume_0/Users/alice/file"),
+            Some("/Users/alice/file")
+        );
+        assert_eq!(
+            strip_apfs_volume_namespace("/volume_12/private/var/db/file"),
+            Some("/private/var/db/file")
+        );
+        assert_eq!(strip_apfs_volume_namespace("/Users/alice/file"), None);
+        assert_eq!(strip_apfs_volume_namespace("/volume_x/Users/alice"), None);
+        assert_eq!(strip_apfs_volume_namespace("/volume_/Users/alice"), None);
+        assert_eq!(strip_apfs_volume_namespace("/volume_0"), None);
+    }
+
+    #[test]
+    fn macos_catalog_pattern_matches_canonical_apfs_path() {
+        let regex = regex::Regex::new(
+            r"^/Users/[^/]+/Library/Preferences/com\.apple\.LaunchServices\.QuarantineEventsV2$",
+        )
+        .expect("valid catalog pattern");
+        let stored =
+            "/volume_0/Users/alice/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2";
+        assert!(!regex.is_match(stored));
+        assert!(
+            strip_apfs_volume_namespace(stored).is_some_and(|path| regex.is_match(path)),
+            "catalog matcher must also test the path without /volume_N"
+        );
+    }
+
+    #[test]
+    fn infers_root_spotlight_and_fsevents_paths_as_macos() {
+        for path in [
+            r"^/\.Spotlight-V100/Store-V2/[^/]+/store\.db$",
+            r"^/\.fseventsd/.*$",
+        ] {
+            assert_eq!(
+                infer_platform(&[ArtifactPath::WithFlag {
+                    path: path.to_string(),
+                    regexp: true,
+                }]),
+                "macOS"
+            );
+        }
+    }
+
+    #[test]
+    fn macos_catalog_bindings_match_real_apfs_path_shapes() {
+        let artifact_set = ArtifactSet::from_yaml_str(include_str!("../artifacts.yaml"))
+            .expect("embedded artifacts.yaml should parse");
+        let cases = [
+            (
+                "macos_launchd",
+                "/volume_0/Users/alice/Library/LaunchAgents/example.plist",
+            ),
+            (
+                "macos_launchd",
+                "/volume_0/Library/Apple/System/Library/LaunchDaemons/example.plist",
+            ),
+            (
+                "macos_loginwindow",
+                "/volume_0/Users/alice/Library/Preferences/ByHost/com.apple.loginwindow.UUID.plist",
+            ),
+            (
+                "macos_quarantine",
+                "/volume_0/Users/alice/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2",
+            ),
+            (
+                "macos_network",
+                "/volume_0/Library/Preferences/SystemConfiguration/preferences.plist",
+            ),
+            (
+                "macos_network",
+                "/volume_0/Library/Preferences/com.apple.wifi.known-networks.plist",
+            ),
+            (
+                "macos_network",
+                "/volume_0/private/var/db/dhcpclient/leases/en0.plist",
+            ),
+            (
+                "macos_spotlight",
+                "/volume_0/.Spotlight-V100/Store-V2/UUID/store.db",
+            ),
+            (
+                "macos_spotlight",
+                "/volume_0/private/var/db/Spotlight-V100/BootVolume/Store-V2/UUID/store.db",
+            ),
+            (
+                "macos_spotlight",
+                "/volume_0/private/var/db/Spotlight-V100/Preboot/Store-V2/UUID/store.db",
+            ),
+        ];
+
+        for (parser, stored_path) in cases {
+            let canonical = strip_apfs_volume_namespace(stored_path);
+            let matched = artifact_set.artifacts.iter().any(|artifact| {
+                artifact.parser.as_deref() == Some(parser)
+                    && artifact.paths.iter().any(|path| {
+                        let regex = regex::Regex::new(&path.to_regex())
+                            .expect("embedded artifact pattern should compile");
+                        regex.is_match(stored_path)
+                            || canonical.is_some_and(|path| regex.is_match(path))
+                    })
+            });
+            assert!(matched, "{parser} did not match {stored_path}");
+        }
+
+        let duplicate_generation = "/volume_0/.Spotlight-V100/Store-V2/UUID/.store.db";
+        let canonical = strip_apfs_volume_namespace(duplicate_generation);
+        let parser_matched = artifact_set.artifacts.iter().any(|artifact| {
+            artifact.parser.as_deref() == Some("macos_spotlight")
+                && artifact.paths.iter().any(|path| {
+                    let regex = regex::Regex::new(&path.to_regex())
+                        .expect("embedded artifact pattern should compile");
+                    regex.is_match(duplicate_generation)
+                        || canonical.is_some_and(|path| regex.is_match(path))
+                })
+        });
+        assert!(
+            !parser_matched,
+            ".store.db must not be parsed as a duplicate Spotlight generation"
+        );
+    }
+
+    #[test]
+    fn messages_attachment_candidates_expand_native_path_forms() {
+        let source = "/volume_0/Users/alice/Library/Messages/chat.db";
+        for (path, expected) in [
+            (
+                "~/Library/Messages/Attachments/aa/bb/photo.jpg",
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+            ),
+            (
+                "/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+            ),
+            (
+                "Attachments/aa/bb/photo.jpg",
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+            ),
+            (
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/bb/photo.jpg",
+            ),
+        ] {
+            let candidates = attachment_path_candidates(Some(source), path)
+                .expect("valid Messages path should produce candidates");
+            assert_eq!(candidates.exact[0], expected, "path form: {path}");
+        }
+
+        let ios = attachment_path_candidates(
+            Some("/volume_0/private/var/mobile/Library/SMS/sms.db"),
+            "/var/mobile/Library/SMS/Attachments/aa/photo.jpg",
+        )
+        .expect("iOS absolute attachment path should produce candidates");
+        assert!(ios.exact.contains(
+            &"/volume_0/private/var/mobile/Library/SMS/Attachments/aa/photo.jpg".to_string()
+        ));
+    }
+
+    #[test]
+    fn whatsapp_attachment_candidates_are_group_container_scoped() {
+        let candidates = attachment_path_candidates(
+            Some(
+                "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
+            ),
+            "Message/Media/example.jpg",
+        )
+        .expect("valid WhatsApp path should produce candidates");
+        assert_eq!(
+            candidates.exact[0],
+            "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media/example.jpg"
+        );
+        assert_eq!(
+            candidates.scoped_suffix,
+            Some((
+                "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared"
+                    .to_string(),
+                "Message/Media/example.jpg".to_string(),
+            ))
+        );
+    }
+
+    #[test]
+    fn messages_filename_is_used_when_local_path_is_absent() {
+        let object = json!({
+            "attachment": {
+                "filename": "~/Library/Messages/Attachments/aa/photo.jpg"
+            }
+        });
+        assert_eq!(
+            attachment_local_path(&object).as_deref(),
+            Some("~/Library/Messages/Attachments/aa/photo.jpg")
+        );
+    }
+
+    #[test]
+    fn attachment_candidates_reject_parent_traversal() {
+        assert!(
+            attachment_path_candidates(
+                Some("/volume_0/Users/alice/Library/Messages/chat.db"),
+                "Attachments/../bob/photo.jpg",
+            )
+            .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn attachment_resolution_stays_with_source_user_and_refuses_ambiguity() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory SQLite should open");
+        sqlx::query(
+            r#"
+            CREATE TABLE system_files (
+                id INTEGER PRIMARY KEY,
+                evidence_id INTEGER NOT NULL,
+                partition_id INTEGER NOT NULL,
+                identifier INTEGER NOT NULL,
+                absolute_path TEXT NOT NULL,
+                host_path TEXT,
+                sig_mime TEXT,
+                name TEXT,
+                size INTEGER,
+                is_dir INTEGER NOT NULL DEFAULT 0
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("test schema should be created");
+        sqlx::query("CREATE INDEX idx_files_ev_path ON system_files(evidence_id, absolute_path)")
+            .execute(&pool)
+            .await
+            .expect("attachment lookup index should be created");
+
+        for (id, path) in [
+            (
+                1_i64,
+                "/volume_0/Users/alice/Library/Messages/Attachments/aa/photo.jpg",
+            ),
+            (
+                2_i64,
+                "/volume_0/Users/bob/Library/Messages/Attachments/aa/photo.jpg",
+            ),
+            (
+                3_i64,
+                "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/archive-a/Message/Media/collision.jpg",
+            ),
+            (
+                4_i64,
+                "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/archive-b/Message/Media/collision.jpg",
+            ),
+        ] {
+            sqlx::query(
+                "INSERT INTO system_files (id, evidence_id, partition_id, identifier, absolute_path, name, size) VALUES (?, 7, 8, ?, ?, 'photo.jpg', 10)",
+            )
+            .bind(id)
+            .bind(id + 100)
+            .bind(path)
+            .execute(&pool)
+            .await
+            .expect("test file should be inserted");
+        }
+
+        let mut tx = pool.begin().await.expect("transaction should begin");
+        let resolved = resolve_attachment_file(
+            &mut tx,
+            7,
+            8,
+            Some("/volume_0/Users/alice/Library/Messages/chat.db"),
+            "~/Library/Messages/Attachments/aa/photo.jpg",
+        )
+        .await
+        .expect("Messages resolution should succeed")
+        .expect("Alice's exact attachment should resolve");
+        assert_eq!(resolved.id, 1);
+
+        let basename_only = resolve_attachment_file(
+            &mut tx,
+            7,
+            8,
+            Some("/volume_0/Users/alice/Library/Messages/chat.db"),
+            "photo.jpg",
+        )
+        .await
+        .expect("basename lookup should not error");
+        assert!(
+            basename_only.is_none(),
+            "a basename must not fall back across users"
+        );
+
+        let ambiguous = resolve_attachment_file(
+            &mut tx,
+            7,
+            8,
+            Some(
+                "/volume_0/Users/alice/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
+            ),
+            "Message/Media/collision.jpg",
+        )
+        .await
+        .expect("ambiguous suffix lookup should not error");
+        assert!(
+            ambiguous.is_none(),
+            "two scoped suffix matches must not be resolved arbitrarily"
+        );
+    }
+
+    #[tokio::test]
+    async fn attachment_resolution_batches_more_paths_than_one_query_chunk() {
+        const FILE_COUNT: usize = 1_101;
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory SQLite should open");
+        sqlx::query(
+            r#"
+            CREATE TABLE system_files (
+                id INTEGER PRIMARY KEY,
+                evidence_id INTEGER NOT NULL,
+                partition_id INTEGER NOT NULL,
+                identifier INTEGER NOT NULL,
+                absolute_path TEXT NOT NULL,
+                host_path TEXT,
+                sig_mime TEXT,
+                name TEXT,
+                size INTEGER,
+                is_dir INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX idx_files_ev_path
+                ON system_files(evidence_id, absolute_path);
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("test schema and attachment index should be created");
+
+        let source =
+            "/filesystem1/private/var/mobile/Containers/Shared/AppGroup/GROUP/ChatStorage.sqlite";
+        let mut objects = Vec::with_capacity(FILE_COUNT + 1);
+        let mut tx = pool.begin().await.expect("transaction should begin");
+        for index in 0..FILE_COUNT {
+            let relative_path = format!("Message/Media/photo-{index:04}.jpg");
+            let absolute_path = format!(
+                "/filesystem1/private/var/mobile/Containers/Shared/AppGroup/GROUP/{relative_path}"
+            );
+            sqlx::query(
+                "INSERT INTO system_files (id, evidence_id, partition_id, identifier, absolute_path, name, size) VALUES (?, 7, 8, ?, ?, ?, 10)",
+            )
+            .bind(index as i64 + 1)
+            .bind(index as i64 + 10_000)
+            .bind(&absolute_path)
+            .bind(format!("photo-{index:04}.jpg"))
+            .execute(&mut *tx)
+            .await
+            .expect("test file should be inserted");
+
+            objects.push(ObjectParsed {
+                parser: "mobile_ios_whatsapp",
+                kind: "mobile.communication.attachment",
+                text: relative_path.clone(),
+                json: json!({
+                    "source": { "path": source },
+                    "media": { "local_path": relative_path },
+                }),
+            });
+        }
+        objects.push(ObjectParsed {
+            parser: "mobile_ios_whatsapp",
+            kind: "mobile.communication.message",
+            text: "not an attachment".to_string(),
+            json: json!({}),
+        });
+
+        let resolved = resolve_attachment_files_batch(&mut tx, 7, 8, &objects)
+            .await
+            .expect("batched resolution should succeed");
+        assert_eq!(resolved.len(), objects.len());
+        assert_eq!(resolved.iter().flatten().count(), FILE_COUNT);
+        assert_eq!(resolved[0].as_ref().map(|file| file.id), Some(1));
+        assert_eq!(
+            resolved[FILE_COUNT - 1].as_ref().map(|file| file.id),
+            Some(FILE_COUNT as i64)
+        );
+        assert!(resolved[FILE_COUNT].is_none());
+    }
 }
 
 pub async fn identify_artefacts(
@@ -464,6 +953,16 @@ pub async fn identify_artefacts(
     tx_progress: Option<Sender<IndexerEvent>>,
     artifacts_yaml_path: Option<&str>, // Allow injection or fallback to embedded
 ) {
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Info,
+            message: format!("Preparing artefact identification for partition {partition_id}…"),
+        },
+    )
+    .await;
+
     let default_yaml = include_str!("../artifacts.yaml");
     let stmt = r#"
         INSERT INTO artifacts (
@@ -691,6 +1190,8 @@ pub async fn identify_artefacts(
         }
     };
 
+    let total_files = all_files.len() as u64;
+
     // Pre-compile all artifact regexes
     let mut compiled_artifacts = Vec::new();
     for artifact in &artifact_set.artifacts {
@@ -722,12 +1223,36 @@ pub async fn identify_artefacts(
         }
     }
 
-    // Now iterate over all files once and check against all artifacts
-    for file in &all_files {
+    send_progress(
+        &tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Progress {
+                current: 0,
+                total: total_files,
+            },
+            message: format!(
+                "Scanning {total_files} indexed files against {} artefact definitions…",
+                compiled_artifacts.len()
+            ),
+        },
+    )
+    .await;
+
+    // Now iterate over all files once and check against all artifacts. APFS
+    // exposes each volume below `/volume_N`, while catalogue paths describe
+    // native macOS paths such as `/Users/...` and `/Library/...`. Match both
+    // representations but keep the indexed absolute path unchanged.
+    let progress_interval = (total_files / 100).max(10_000);
+    let mut matched_artefacts = 0u64;
+    for (index, file) in all_files.iter().enumerate() {
+        let logical_path = strip_apfs_volume_namespace(&file.absolute_path);
         for (artifact, regexes) in &compiled_artifacts {
             let mut matched = false;
             for rx in regexes {
-                if rx.is_match(&file.absolute_path) {
+                if rx.is_match(&file.absolute_path)
+                    || logical_path.is_some_and(|path| rx.is_match(path))
+                {
                     matched = true;
                     break;
                 }
@@ -761,8 +1286,29 @@ pub async fn identify_artefacts(
                     )
                     .await;
                     error!("{}", msg);
+                } else {
+                    matched_artefacts += 1;
                 }
             }
+        }
+
+        let current = index as u64 + 1;
+        if current % progress_interval == 0 || current == total_files {
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Progress {
+                        current,
+                        total: total_files,
+                    },
+                    message: format!(
+                        "Identifying artefacts: {current}/{total_files} files scanned, \
+                         {matched_artefacts} matches found…"
+                    ),
+                },
+            )
+            .await;
         }
     }
 
@@ -771,10 +1317,27 @@ pub async fn identify_artefacts(
         IndexerEvent {
             evidence_id,
             event_type: IndexerEventType::Success,
-            message: "Artefact identification complete.".to_string(),
+            message: format!(
+                "Artefact identification complete: scanned {total_files} files and found \
+                 {matched_artefacts} matches."
+            ),
         },
     )
     .await;
+}
+
+/// Remove Exhume's synthetic APFS volume namespace from an indexed path.
+///
+/// `/volume_0/Users/alice/file` becomes `/Users/alice/file`. Paths from other
+/// filesystems, and malformed/non-numeric volume prefixes, are left alone.
+fn strip_apfs_volume_namespace(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("/volume_")?;
+    let slash = rest.find('/')?;
+    let index = &rest[..slash];
+    if index.is_empty() || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(&rest[slash..])
 }
 
 fn extract_artefact<F: Filesystem>(
@@ -814,7 +1377,7 @@ where
         Ok(())
     };
 
-    if parser.companion_specs().is_empty() {
+    if parser.companion_specs().is_empty() && !parser.requires_source_metadata() {
         // Adapter: Read+Seek backed by Filesystem::read_file_slice
         let rs = FsFileReadSeek::new(fs, record);
         parser.run_into(ParserInput::ReadSeek(Box::new(rs)), &mut sink)?;
@@ -948,7 +1511,9 @@ async fn resolve_companion_sources(
     Ok(companions)
 }
 
-#[derive(Debug)]
+const ATTACHMENT_EXACT_PATH_BATCH_SIZE: usize = 500;
+
+#[derive(Debug, Clone)]
 struct ResolvedAttachmentFile {
     id: i64,
     identifier: i64,
@@ -966,19 +1531,11 @@ async fn insert_attachment_ref(
     artifact_object_id: i64,
     parser: &str,
     object_json: &Value,
+    resolved: Option<&ResolvedAttachmentFile>,
 ) -> Result<()> {
-    let local_path = json_string(object_json, &["media", "local_path"])
-        .or_else(|| json_string(object_json, &["attachment", "local_path"]));
-    let source_path = json_string(object_json, &["source", "path"]);
+    let local_path = attachment_local_path(object_json);
     let kind = json_string(object_json, &["attachment", "kind"]);
     let is_location = kind.as_deref() == Some("location");
-    let resolved = match local_path.as_deref() {
-        Some(path) => {
-            resolve_attachment_file(tx, evidence_id, partition_id, source_path.as_deref(), path)
-                .await?
-        }
-        None => None,
-    };
 
     sqlx::query(
         r#"
@@ -1048,13 +1605,13 @@ async fn insert_attachment_ref(
     } else {
         None
     })
-    .bind(resolved.as_ref().map(|file| file.id))
-    .bind(resolved.as_ref().map(|file| file.identifier))
-    .bind(resolved.as_ref().map(|file| file.absolute_path.clone()))
-    .bind(resolved.as_ref().and_then(|file| file.host_path.clone()))
-    .bind(resolved.as_ref().and_then(|file| file.sig_mime.clone()))
-    .bind(resolved.as_ref().and_then(|file| file.name.clone()))
-    .bind(resolved.as_ref().and_then(|file| file.size))
+    .bind(resolved.map(|file| file.id))
+    .bind(resolved.map(|file| file.identifier))
+    .bind(resolved.map(|file| file.absolute_path.clone()))
+    .bind(resolved.and_then(|file| file.host_path.clone()))
+    .bind(resolved.and_then(|file| file.sig_mime.clone()))
+    .bind(resolved.and_then(|file| file.name.clone()))
+    .bind(resolved.and_then(|file| file.size))
     .bind(json_string(object_json, &["preview", "mime"]))
     .bind(json_string(object_json, &["preview", "data"]))
     .bind(object_json.to_string())
@@ -1064,6 +1621,182 @@ async fn insert_attachment_ref(
     Ok(())
 }
 
+/// Resolve every attachment emitted by one parser invocation in a bounded
+/// number of indexed queries. The result vector is positionally aligned with
+/// `objects`; non-attachment objects and attachments without usable paths are
+/// represented by `None`.
+async fn resolve_attachment_files_batch(
+    tx: &mut Transaction<'_, Sqlite>,
+    evidence_id: i64,
+    partition_id: i64,
+    objects: &[ObjectParsed],
+) -> Result<Vec<Option<ResolvedAttachmentFile>>> {
+    let candidates = objects
+        .iter()
+        .map(|object| {
+            if object.kind != "mobile.communication.attachment" {
+                return None;
+            }
+            let source_path = json_string(&object.json, &["source", "path"]);
+            let local_path = attachment_local_path(&object.json);
+            attachment_path_candidates(source_path.as_deref(), local_path.as_deref()?)
+        })
+        .collect::<Vec<_>>();
+
+    resolve_attachment_candidates_batch(tx, evidence_id, partition_id, &candidates).await
+}
+
+async fn resolve_attachment_candidates_batch(
+    tx: &mut Transaction<'_, Sqlite>,
+    evidence_id: i64,
+    partition_id: i64,
+    candidates: &[Option<AttachmentPathCandidates>],
+) -> Result<Vec<Option<ResolvedAttachmentFile>>> {
+    let mut seen_paths = HashSet::new();
+    let mut exact_paths = Vec::new();
+    for candidate_set in candidates.iter().flatten() {
+        for path in &candidate_set.exact {
+            if seen_paths.insert(path.clone()) {
+                exact_paths.push(path.clone());
+            }
+        }
+    }
+
+    let mut exact_files = HashMap::<String, ResolvedAttachmentFile>::new();
+    for path_batch in exact_paths.chunks(ATTACHMENT_EXACT_PATH_BATCH_SIZE) {
+        let mut query = sqlx::QueryBuilder::<Sqlite>::new(
+            r#"
+            SELECT
+                id,
+                identifier,
+                absolute_path,
+                host_path,
+                sig_mime,
+                name,
+                size
+            FROM system_files INDEXED BY idx_files_ev_path
+            WHERE evidence_id = "#,
+        );
+        query
+            .push_bind(evidence_id)
+            .push(" AND partition_id = ")
+            .push_bind(partition_id)
+            .push(
+                r#"
+              AND is_dir = 0
+              AND absolute_path IN ("#,
+            );
+        {
+            let mut separated = query.separated(", ");
+            for path in path_batch {
+                separated.push_bind(path);
+            }
+        }
+        query.push(") ORDER BY id;");
+
+        for row in query.build().fetch_all(&mut **tx).await? {
+            let file = decode_resolved_attachment_row(&row)?;
+            exact_files
+                .entry(file.absolute_path.clone())
+                .or_insert(file);
+        }
+    }
+
+    let mut resolved = Vec::with_capacity(candidates.len());
+    let mut suffixes_by_scope = HashMap::<String, HashSet<String>>::new();
+    for candidate_set in candidates {
+        let Some(candidate_set) = candidate_set else {
+            resolved.push(None);
+            continue;
+        };
+
+        if let Some(file) = candidate_set
+            .exact
+            .iter()
+            .find_map(|path| exact_files.get(path))
+        {
+            resolved.push(Some(file.clone()));
+            continue;
+        }
+
+        if let Some((scope, suffix)) = candidate_set.scoped_suffix.as_ref() {
+            suffixes_by_scope
+                .entry(scope.clone())
+                .or_default()
+                .insert(suffix.clone());
+        }
+        resolved.push(None);
+    }
+
+    let mut suffix_matches = HashMap::<(String, String), Vec<ResolvedAttachmentFile>>::new();
+    for (scope, suffixes) in suffixes_by_scope {
+        let lower_bound = format!("{}/", scope.trim_end_matches('/'));
+        // Evidence paths are normalized with `/` separators. Incrementing the
+        // trailing slash gives the exclusive upper bound for every descendant
+        // while retaining an indexable range predicate.
+        let upper_bound = format!("{}0", scope.trim_end_matches('/'));
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id,
+                identifier,
+                absolute_path,
+                host_path,
+                sig_mime,
+                name,
+                size
+            FROM system_files INDEXED BY idx_files_ev_path
+            WHERE evidence_id = ?
+              AND partition_id = ?
+              AND is_dir = 0
+              AND absolute_path >= ?
+              AND absolute_path < ?
+            ORDER BY id;
+            "#,
+        )
+        .bind(evidence_id)
+        .bind(partition_id)
+        .bind(lower_bound)
+        .bind(upper_bound)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        for row in rows {
+            let file = decode_resolved_attachment_row(&row)?;
+            let Some(suffix) = stable_attachment_suffix(&file.absolute_path) else {
+                continue;
+            };
+            if suffixes.contains(suffix) {
+                suffix_matches
+                    .entry((scope.clone(), suffix.to_string()))
+                    .or_default()
+                    .push(file);
+            }
+        }
+    }
+
+    for (index, candidate_set) in candidates.iter().enumerate() {
+        if resolved[index].is_some() {
+            continue;
+        }
+        let Some((scope, suffix)) = candidate_set
+            .as_ref()
+            .and_then(|candidate_set| candidate_set.scoped_suffix.as_ref())
+        else {
+            continue;
+        };
+        if let Some([file]) = suffix_matches
+            .get(&(scope.clone(), suffix.clone()))
+            .map(Vec::as_slice)
+        {
+            resolved[index] = Some(file.clone());
+        }
+    }
+
+    Ok(resolved)
+}
+
+#[cfg(test)]
 async fn resolve_attachment_file(
     tx: &mut Transaction<'_, Sqlite>,
     evidence_id: i64,
@@ -1071,94 +1804,151 @@ async fn resolve_attachment_file(
     source_path: Option<&str>,
     local_path: &str,
 ) -> Result<Option<ResolvedAttachmentFile>> {
-    let root = source_root(source_path).unwrap_or_default();
-    let candidate_message = format!("{root}/Message/{local_path}");
-    let candidate_root = format!("{root}/{local_path}");
-    let candidate_shared_message =
-        format!("{root}/net.whatsapp.WhatsApp.shared/Message/{local_path}");
-    let candidate_shared = format!("{root}/net.whatsapp.WhatsApp.shared/{local_path}");
-    let suffix_pattern = format!("%/{}", escape_sql_like(local_path));
-
-    let row = sqlx::query(
-        r#"
-        SELECT
-            id,
-            identifier,
-            absolute_path,
-            host_path,
-            sig_mime,
-            name,
-            size
-        FROM system_files
-        WHERE evidence_id = ?
-          AND partition_id = ?
-          AND is_dir = 0
-          AND (
-            absolute_path = ?
-            OR absolute_path = ?
-            OR absolute_path = ?
-            OR absolute_path = ?
-            OR absolute_path LIKE ? ESCAPE '\'
-          )
-        ORDER BY
-          CASE
-            WHEN absolute_path = ? THEN 0
-            WHEN absolute_path = ? THEN 1
-            WHEN absolute_path = ? THEN 2
-            WHEN absolute_path = ? THEN 3
-            ELSE 4
-          END,
-          LENGTH(absolute_path) ASC
-        LIMIT 1;
-        "#,
-    )
-    .bind(evidence_id)
-    .bind(partition_id)
-    .bind(&candidate_message)
-    .bind(&candidate_root)
-    .bind(&candidate_shared_message)
-    .bind(&candidate_shared)
-    .bind(&suffix_pattern)
-    .bind(&candidate_message)
-    .bind(&candidate_root)
-    .bind(&candidate_shared_message)
-    .bind(&candidate_shared)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    row.map(|row| {
-        Ok(ResolvedAttachmentFile {
-            id: row.try_get("id")?,
-            identifier: row.try_get("identifier")?,
-            absolute_path: row.try_get("absolute_path")?,
-            host_path: row.try_get("host_path")?,
-            sig_mime: row.try_get("sig_mime")?,
-            name: row.try_get("name")?,
-            size: row.try_get("size")?,
-        })
-    })
-    .transpose()
+    let Some(paths) = attachment_path_candidates(source_path, local_path) else {
+        return Ok(None);
+    };
+    resolve_attachment_candidates_batch(tx, evidence_id, partition_id, &[Some(paths)])
+        .await
+        .map(|mut resolved| resolved.pop().flatten())
 }
 
-fn source_root(path: Option<&str>) -> Option<String> {
-    let path = path?;
-    for suffix in [
-        "/net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
-        "/ChatStorage.sqlite",
-    ] {
-        if let Some(root) = path.strip_suffix(suffix) {
-            return Some(root.to_string());
+fn decode_resolved_attachment_row(row: &sqlx::sqlite::SqliteRow) -> Result<ResolvedAttachmentFile> {
+    Ok(ResolvedAttachmentFile {
+        id: row.try_get("id")?,
+        identifier: row.try_get("identifier")?,
+        absolute_path: row.try_get("absolute_path")?,
+        host_path: row.try_get("host_path")?,
+        sig_mime: row.try_get("sig_mime")?,
+        name: row.try_get("name")?,
+        size: row.try_get("size")?,
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AttachmentPathCandidates {
+    exact: Vec<String>,
+    /// `(source scope, stable relative suffix)` used only when it identifies a
+    /// single file. The scope is always the source database's directory.
+    scoped_suffix: Option<(String, String)>,
+}
+
+fn attachment_local_path(object_json: &Value) -> Option<String> {
+    json_string(object_json, &["media", "local_path"])
+        .or_else(|| json_string(object_json, &["attachment", "local_path"]))
+        // Apple Messages calls this column `filename`; it commonly contains a
+        // full `~/Library/Messages/Attachments/...` path rather than a basename.
+        .or_else(|| json_string(object_json, &["attachment", "filename"]))
+}
+
+fn attachment_path_candidates(
+    source_path: Option<&str>,
+    local_path: &str,
+) -> Option<AttachmentPathCandidates> {
+    let source = normalize_evidence_path(source_path?)?;
+    let local = normalize_evidence_path(local_path)?;
+    let source_dir = source.rsplit_once('/')?.0.to_string();
+    let volume_prefix = apfs_volume_prefix(&source);
+    let home = source_home(&source);
+    let mut exact = Vec::new();
+
+    if local.starts_with("/volume_") {
+        push_unique(&mut exact, local.clone());
+    } else if local.starts_with('/') {
+        if let Some(prefix) = volume_prefix {
+            push_unique(&mut exact, format!("{prefix}{local}"));
+            if local.starts_with("/var/mobile/") {
+                push_unique(&mut exact, format!("{prefix}/private{local}"));
+            }
+        } else if local.starts_with("/var/mobile/") {
+            push_unique(&mut exact, format!("/private{local}"));
+        }
+        push_unique(&mut exact, local.clone());
+    } else if let Some(rest) = local.strip_prefix("~/") {
+        if let Some(home) = &home {
+            push_unique(&mut exact, format!("{home}/{rest}"));
+        }
+    } else {
+        // WhatsApp paths are normally `Message/Media/...`; Messages paths may
+        // be `Attachments/...`. Both are relative to the source DB directory.
+        push_unique(&mut exact, format!("{source_dir}/{local}"));
+
+        if !local.starts_with("Message/") {
+            push_unique(&mut exact, format!("{source_dir}/Message/{local}"));
+        }
+        if local.starts_with("Library/") {
+            if let Some(home) = &home {
+                push_unique(&mut exact, format!("{home}/{local}"));
+            }
         }
     }
 
+    let scoped_suffix =
+        stable_attachment_suffix(&local).map(|suffix| (source_dir, suffix.to_string()));
+    (!exact.is_empty()).then_some(AttachmentPathCandidates {
+        exact,
+        scoped_suffix,
+    })
+}
+
+fn normalize_evidence_path(path: &str) -> Option<String> {
+    let mut path = path.trim().trim_end_matches('\0').replace('\\', "/");
+    if let Some(file_path) = path.strip_prefix("file://") {
+        path = file_path.to_string();
+    }
+    while path.contains("//") {
+        path = path.replace("//", "/");
+    }
+    if path.is_empty()
+        || path
+            .split('/')
+            .any(|component| component == "." || component == "..")
+    {
+        return None;
+    }
+    Some(path)
+}
+
+fn apfs_volume_prefix(path: &str) -> Option<&str> {
+    let logical = strip_apfs_volume_namespace(path)?;
+    Some(&path[..path.len() - logical.len()])
+}
+
+fn source_home(path: &str) -> Option<String> {
+    let volume_prefix = apfs_volume_prefix(path).unwrap_or_default();
+    let logical = strip_apfs_volume_namespace(path).unwrap_or(path);
+    if let Some(rest) = logical.strip_prefix("/Users/") {
+        let user = rest.split('/').next()?;
+        return Some(format!("{volume_prefix}/Users/{user}"));
+    }
+    for mobile_home in ["/private/var/mobile", "/var/mobile"] {
+        if logical == mobile_home || logical.starts_with(&format!("{mobile_home}/")) {
+            return Some(format!("{volume_prefix}{mobile_home}"));
+        }
+    }
     None
 }
 
-fn escape_sql_like(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
+fn stable_attachment_suffix(path: &str) -> Option<&str> {
+    let path = path.strip_prefix("~/").unwrap_or(path);
+    for marker in ["Library/Messages/", "Library/SMS/"] {
+        if let Some(index) = path.find(marker) {
+            let suffix = &path[index + marker.len()..];
+            return suffix.starts_with("Attachments/").then_some(suffix);
+        }
+    }
+    for marker in ["Message/Media/", "Attachments/"] {
+        if let Some(index) = path.find(marker) {
+            let suffix = &path[index..];
+            return (suffix.len() > marker.len()).then_some(suffix);
+        }
+    }
+    None
+}
+
+fn push_unique(paths: &mut Vec<String>, path: String) {
+    if !paths.iter().any(|candidate| candidate == &path) {
+        paths.push(path);
+    }
 }
 
 fn json_string(value: &Value, path: &[&str]) -> Option<String> {
@@ -1201,6 +1991,60 @@ fn json_f64(value: &Value, path: &[&str]) -> Option<f64> {
             .as_str()
             .and_then(|value| value.trim().parse::<f64>().ok())
     })
+}
+
+#[derive(Debug, Default)]
+struct ParserRunStats {
+    files: u64,
+    failures: u64,
+    objects_emitted: u64,
+    elapsed_ms: u128,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_parser_progress(
+    tx_progress: &Option<Sender<IndexerEvent>>,
+    evidence_id: i64,
+    current: u64,
+    total: u64,
+    parser: &str,
+    file_path: &str,
+    artifact_id: i64,
+    file_id: Option<i64>,
+    phase: ParserProgressPhase,
+    elapsed_ms: Option<u64>,
+    setup_ms: Option<u64>,
+    parse_ms: Option<u64>,
+    persistence_ms: Option<u64>,
+    objects_emitted: Option<u64>,
+    message: String,
+) {
+    send_progress(
+        tx_progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::ParserProgress {
+                current,
+                total,
+                parser: parser.to_string(),
+                file_path: file_path.to_string(),
+                artifact_id,
+                file_id,
+                phase,
+                elapsed_ms,
+                setup_ms,
+                parse_ms,
+                persistence_ms,
+                objects_emitted,
+            },
+            message,
+        },
+    )
+    .await;
+}
+
+fn elapsed_millis(started_at: Instant) -> u64 {
+    u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 pub async fn extract_artefacts<F: Filesystem>(
@@ -1302,6 +2146,7 @@ pub async fn extract_artefacts<F: Filesystem>(
 
     let mut processed_files = 0u64;
     let mut emitted_objects = 0u64;
+    let mut parser_stats = BTreeMap::<String, ParserRunStats>::new();
 
     for row in rows {
         if let Some(token) = &cancel_token {
@@ -1344,6 +2189,37 @@ pub async fn extract_artefacts<F: Filesystem>(
             }
         };
 
+        let parser_started_at = Instant::now();
+        parser_stats
+            .entry(parser_name.to_string())
+            .or_default()
+            .files += 1;
+        let start_message =
+            format!("Running parser {parser_name} ({processed_files}/{total}): {abs_path}");
+        send_parser_progress(
+            &tx_progress,
+            evidence_id,
+            processed_files,
+            total,
+            parser_name,
+            &abs_path,
+            artifact_id,
+            file_id,
+            ParserProgressPhase::Started,
+            None,
+            None,
+            None,
+            None,
+            None,
+            start_message,
+        )
+        .await;
+        info!(
+            "artefact_parser_start evidence_id={evidence_id} partition_id={partition_id} \
+             parser={parser_name} position={processed_files}/{total} artifact_id={artifact_id} \
+             file_id={file_id:?} path={abs_path:?}"
+        );
+
         let companions = match resolve_companion_sources(
             &mut tx,
             evidence_id,
@@ -1355,10 +2231,33 @@ pub async fn extract_artefacts<F: Filesystem>(
         {
             Ok(companions) => companions,
             Err(e) => {
+                let elapsed_ms = elapsed_millis(parser_started_at);
+                if let Some(stats) = parser_stats.get_mut(parser_name) {
+                    stats.failures += 1;
+                    stats.elapsed_ms += u128::from(elapsed_ms);
+                }
                 let msg = format!(
                     "Failed to resolve parser companions (parser={}, file={}): {e:?}",
                     parser_name, abs_path
                 );
+                send_parser_progress(
+                    &tx_progress,
+                    evidence_id,
+                    processed_files,
+                    total,
+                    parser_name,
+                    &abs_path,
+                    artifact_id,
+                    file_id,
+                    ParserProgressPhase::Failed,
+                    Some(elapsed_ms),
+                    Some(elapsed_ms),
+                    None,
+                    None,
+                    Some(0),
+                    msg.clone(),
+                )
+                .await;
                 send_progress(
                     &tx_progress,
                     IndexerEvent {
@@ -1372,6 +2271,9 @@ pub async fn extract_artefacts<F: Filesystem>(
                 continue;
             }
         };
+
+        let setup_ms = elapsed_millis(parser_started_at);
+        let parser_call_started_at = Instant::now();
 
         let objs = match extract_artefact(
             fs,
@@ -1384,10 +2286,34 @@ pub async fn extract_artefacts<F: Filesystem>(
         ) {
             Ok(v) => v,
             Err(e) => {
+                let parse_ms = elapsed_millis(parser_call_started_at);
+                let elapsed_ms = elapsed_millis(parser_started_at);
+                if let Some(stats) = parser_stats.get_mut(parser_name) {
+                    stats.failures += 1;
+                    stats.elapsed_ms += u128::from(elapsed_ms);
+                }
                 let msg = format!(
                     "Extraction failed (parser={}, file={}): {e:?}",
                     parser_name, abs_path
                 );
+                send_parser_progress(
+                    &tx_progress,
+                    evidence_id,
+                    processed_files,
+                    total,
+                    parser_name,
+                    &abs_path,
+                    artifact_id,
+                    file_id,
+                    ParserProgressPhase::Failed,
+                    Some(elapsed_ms),
+                    Some(setup_ms),
+                    Some(parse_ms),
+                    None,
+                    Some(0),
+                    msg.clone(),
+                )
+                .await;
                 send_progress(
                     &tx_progress,
                     IndexerEvent {
@@ -1402,7 +2328,50 @@ pub async fn extract_artefacts<F: Filesystem>(
             }
         };
 
-        for obj in objs {
+        let parse_ms = elapsed_millis(parser_call_started_at);
+        let objects_from_file = objs.len() as u64;
+        let persistence_started_at = Instant::now();
+
+        let attachment_count = objs
+            .iter()
+            .filter(|object| object.kind == "mobile.communication.attachment")
+            .count();
+        let attachment_resolution_started_at = Instant::now();
+        let attachment_resolutions = if attachment_count == 0 {
+            vec![None; objs.len()]
+        } else {
+            match resolve_attachment_files_batch(&mut tx, evidence_id, partition_id, &objs).await {
+                Ok(resolved) => {
+                    let resolved_count = resolved.iter().flatten().count();
+                    info!(
+                        "artefact_attachment_resolution evidence_id={evidence_id} \
+                         partition_id={partition_id} parser={parser_name} \
+                         attachments={attachment_count} resolved={resolved_count} \
+                         elapsed_ms={}",
+                        elapsed_millis(attachment_resolution_started_at)
+                    );
+                    resolved
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "Attachment path resolution failed (parser={parser_name}, file={abs_path}): {e:?}"
+                    );
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Error,
+                            message: msg.clone(),
+                        },
+                    )
+                    .await;
+                    error!("{}", msg);
+                    vec![None; objs.len()]
+                }
+            }
+        };
+
+        for (obj, resolved_attachment) in objs.into_iter().zip(attachment_resolutions.iter()) {
             emitted_objects += 1;
 
             // Must be called before obj fields are moved out below.
@@ -1492,6 +2461,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                     artifact_object_id,
                     object_parser,
                     &object_json,
+                    resolved_attachment.as_ref(),
                 )
                 .await
                 {
@@ -1509,6 +2479,44 @@ pub async fn extract_artefacts<F: Filesystem>(
                 }
             }
         }
+
+        let persistence_ms = elapsed_millis(persistence_started_at);
+        let elapsed_ms = elapsed_millis(parser_started_at);
+        if let Some(stats) = parser_stats.get_mut(parser_name) {
+            stats.objects_emitted += objects_from_file;
+            stats.elapsed_ms += u128::from(elapsed_ms);
+        }
+        let completed_message = format!(
+            "Parser {parser_name} completed ({processed_files}/{total}) in {elapsed_ms} ms \
+             (setup {setup_ms} ms, parse {parse_ms} ms, database {persistence_ms} ms); \
+             {objects_from_file} objects: {abs_path}"
+        );
+        send_parser_progress(
+            &tx_progress,
+            evidence_id,
+            processed_files,
+            total,
+            parser_name,
+            &abs_path,
+            artifact_id,
+            file_id,
+            ParserProgressPhase::Completed,
+            Some(elapsed_ms),
+            Some(setup_ms),
+            Some(parse_ms),
+            Some(persistence_ms),
+            Some(objects_from_file),
+            completed_message,
+        )
+        .await;
+        info!(
+            "artefact_parser_finish evidence_id={evidence_id} partition_id={partition_id} \
+             parser={parser_name} position={processed_files}/{total} artifact_id={artifact_id} \
+             file_id={file_id:?} elapsed_ms={elapsed_ms} setup_ms={setup_ms} \
+             parse_ms={parse_ms} persistence_ms={persistence_ms} \
+             objects_emitted={objects_from_file} \
+             path={abs_path:?}"
+        );
 
         if processed_files % 50 == 0 || processed_files == total {
             send_progress(&tx_progress, IndexerEvent {
@@ -1552,4 +2560,11 @@ pub async fn extract_artefacts<F: Filesystem>(
         "Artefact extraction done evidence_id={evidence_id} partition_id={partition_id}: \
          processed={total} emitted={emitted_objects}"
     );
+    for (parser, stats) in parser_stats {
+        info!(
+            "artefact_parser_summary evidence_id={evidence_id} partition_id={partition_id} \
+             parser={parser} files={} failures={} objects_emitted={} elapsed_ms={}",
+            stats.files, stats.failures, stats.objects_emitted, stats.elapsed_ms
+        );
+    }
 }

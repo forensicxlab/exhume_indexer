@@ -458,6 +458,14 @@ async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>, progress_enabled
                     bar.set_message(event.message);
                 }
             }
+            IndexerEventType::ParserProgress { current, total, .. } => {
+                if bar.length() != Some(total) {
+                    bar.set_style(progress_style());
+                    bar.set_length(total);
+                }
+                bar.set_position(current.saturating_sub(1).min(total));
+                bar.set_message(event.message);
+            }
             IndexerEventType::Success => {
                 bar.finish_with_message(event.message);
             }
@@ -482,6 +490,17 @@ async fn plain_progress_monitor(rx: &mut mpsc::Receiver<IndexerEvent>) {
             IndexerEventType::Progress { current, total } => {
                 eprintln!("[PROGRESS] {current}/{total} {}", event.message)
             }
+            IndexerEventType::ParserProgress {
+                parser,
+                phase,
+                current,
+                total,
+                ..
+            } => eprintln!(
+                "[PARSER] {current}/{total} {parser} {}: {}",
+                phase.as_str(),
+                event.message
+            ),
             IndexerEventType::Success => eprintln!("[SUCCESS] {}", event.message),
             IndexerEventType::Warning => eprintln!("[WARNING] {}", event.message),
             IndexerEventType::Error => eprintln!("[ERROR] {}", event.message),
