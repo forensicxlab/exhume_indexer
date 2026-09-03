@@ -4,25 +4,25 @@ use exhume_artefacts::{
     CompanionPathRule, CompanionSpec, CompoundParserInput, ObjectParsed, Parser as ArtefactParser,
     ParserFileProvider, ParserInput, ParserSource,
 };
+use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
 use exhume_filesystem::File;
 use exhume_filesystem::Filesystem;
-use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
 use regex::escape;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::Row;
 use sqlx::sqlite::SqlitePool;
+use sqlx::Row;
 use sqlx::{Sqlite, Transaction};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
-use crate::{IndexerEvent, IndexerEventType, ParserProgressPhase, send_progress};
+use crate::{send_progress, IndexerEvent, IndexerEventType, ParserProgressPhase};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -207,15 +207,15 @@ fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::E
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactPath, ArtifactSet, attachment_local_path, attachment_path_candidates,
-        extract_artefact, infer_platform, resolve_attachment_file, resolve_attachment_files_batch,
-        strip_apfs_volume_namespace,
+        attachment_local_path, attachment_path_candidates, extract_artefact, infer_platform,
+        resolve_attachment_file, resolve_attachment_files_batch, strip_apfs_volume_namespace,
+        ArtifactPath, ArtifactSet,
     };
     use anyhow::Result;
     use exhume_artefacts::{ObjectParsed, Parser};
-    use exhume_filesystem::File as ExhumeFile;
     use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, Filesystem};
-    use serde_json::{Value, json};
+    use exhume_filesystem::File as ExhumeFile;
+    use serde_json::{json, Value};
     use sqlx::sqlite::SqlitePoolOptions;
     use std::error::Error;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -644,6 +644,26 @@ mod tests {
                 "macos_spotlight",
                 "/volume_0/private/var/db/Spotlight-V100/Preboot/Store-V2/UUID/store.db",
             ),
+            (
+                "macos_app_bundle",
+                "/volume_0/Applications/WhatsApp.app/Contents/Info.plist",
+            ),
+            (
+                "macos_app_bundle",
+                "/volume_0/Applications/Example.app/Contents/Helpers/Updater.app/Contents/Info.plist",
+            ),
+            (
+                "macos_install_history",
+                "/volume_0/Library/Receipts/InstallHistory.plist",
+            ),
+            (
+                "macos_package_receipt",
+                "/volume_0/private/var/db/receipts/com.example.application.plist",
+            ),
+            (
+                "macos_container_registration",
+                "/volume_0/Users/alice/Library/Containers/com.example.application/.com.apple.containermanagerd.metadata.plist",
+            ),
         ];
 
         for (parser, stored_path) in cases {
@@ -675,6 +695,88 @@ mod tests {
             !parser_matched,
             ".store.db must not be parsed as a duplicate Spotlight generation"
         );
+    }
+
+    #[test]
+    fn ios_installed_application_catalog_bindings_match_primary_sources_only() {
+        let artifact_set = ArtifactSet::from_yaml_str(include_str!("../artifacts.yaml"))
+            .expect("embedded artifacts.yaml should parse");
+        let cases = [
+            (
+                "mobile_ios_app_manifest",
+                "/filesystem1/Applications/Camera.app/Info.plist",
+            ),
+            (
+                "mobile_ios_app_manifest",
+                "/filesystem1/private/var/containers/Bundle/Application/C278E46A-69EF-4D34-8214-A7DCE5133F82/WhatsApp.app/Info.plist",
+            ),
+            (
+                "mobile_ios_app_container",
+                "/filesystem1/private/var/mobile/Containers/Data/Application/010990CE-E32E-4D9B-91FF-F77956F2B55F/.com.apple.mobile_container_manager.metadata.plist",
+            ),
+            (
+                "mobile_ios_app_container",
+                "/filesystem1/private/var/mobile/Containers/Shared/AppGroup/B544848F-91B6-47CC-8E50-9D43575046D1/.com.apple.mobile_container_manager.metadata.plist",
+            ),
+            (
+                "mobile_ios_frontboard",
+                "/filesystem1/private/var/mobile/Library/FrontBoard/applicationState.db",
+            ),
+            (
+                "mobile_ios_iconstate",
+                "/filesystem1/private/var/mobile/Library/SpringBoard/IconState.plist",
+            ),
+            (
+                "mobile_ios_mobileinstallation_log",
+                "/filesystem1/private/var/installd/Library/Logs/MobileInstallation/mobile_installation.log.0",
+            ),
+        ];
+
+        for (parser, stored_path) in cases {
+            let matched = artifact_set.artifacts.iter().any(|artifact| {
+                artifact.parser.as_deref() == Some(parser)
+                    && artifact.paths.iter().any(|path| {
+                        regex::Regex::new(&path.to_regex())
+                            .expect("embedded artifact pattern should compile")
+                            .is_match(stored_path)
+                    })
+            });
+            assert!(matched, "{parser} did not match {stored_path}");
+        }
+
+        let nested_watch = "/filesystem1/private/var/containers/Bundle/Application/C278E46A-69EF-4D34-8214-A7DCE5133F82/Spotify.app/Watch/Spotify Watch App.app/Info.plist";
+        let nested_matched = artifact_set.artifacts.iter().any(|artifact| {
+            artifact.parser.as_deref() == Some("mobile_ios_app_manifest")
+                && artifact.paths.iter().any(|path| {
+                    regex::Regex::new(&path.to_regex())
+                        .expect("embedded artifact pattern should compile")
+                        .is_match(nested_watch)
+                })
+        });
+        assert!(
+            !nested_matched,
+            "nested Watch/extension manifests must not become primary installed applications"
+        );
+
+        for untrusted_nested_path in [
+            "/filesystem1/private/var/mobile/Documents/Applications/Impostor.app/Info.plist",
+            "/filesystem1/private/var/mobile/Documents/private/var/containers/Bundle/Application/C278E46A-69EF-4D34-8214-A7DCE5133F82/Impostor.app/Info.plist",
+            "/filesystem1/tmp/private/var/mobile/Applications/C278E46A-69EF-4D34-8214-A7DCE5133F82/Impostor.app/Info.plist",
+            "/filesystem1/private/var/containers/Bundle/Application/not-a-uuid/Impostor.app/Info.plist",
+        ] {
+            let matched = artifact_set.artifacts.iter().any(|artifact| {
+                artifact.parser.as_deref() == Some("mobile_ios_app_manifest")
+                    && artifact.paths.iter().any(|path| {
+                        regex::Regex::new(&path.to_regex())
+                            .expect("embedded artifact pattern should compile")
+                            .is_match(untrusted_nested_path)
+                    })
+            });
+            assert!(
+                !matched,
+                "nested untrusted path must not assert installed-app presence: {untrusted_nested_path}"
+            );
+        }
     }
 
     #[test]
@@ -751,13 +853,11 @@ mod tests {
 
     #[test]
     fn attachment_candidates_reject_parent_traversal() {
-        assert!(
-            attachment_path_candidates(
-                Some("/volume_0/Users/alice/Library/Messages/chat.db"),
-                "Attachments/../bob/photo.jpg",
-            )
-            .is_none()
-        );
+        assert!(attachment_path_candidates(
+            Some("/volume_0/Users/alice/Library/Messages/chat.db"),
+            "Attachments/../bob/photo.jpg",
+        )
+        .is_none());
     }
 
     #[tokio::test]

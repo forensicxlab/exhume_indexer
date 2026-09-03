@@ -797,6 +797,53 @@ artifacts:
 
   # ---------------- macOS Artifacts ----------------
 
+  - name: "macOS Application Bundle Manifests"
+    description: "Application bundle manifests evidencing code present at acquisition, including embedded components"
+    paths:
+      - path: '^/.+\.app/Contents/Info\.plist$'
+        regexp: true
+    parser: "macos_app_bundle"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "macOS Installation History"
+    description: "Apple-recorded software installation and update history"
+    paths:
+      - "/Library/Receipts/InstallHistory.plist"
+    parser: "macos_install_history"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "macOS Package Receipts"
+    description: "Package receipt metadata corroborating installed or historical software"
+    paths:
+      - path: '^/private/var/db/receipts/[^/]+\.plist$'
+        regexp: true
+    parser: "macos_package_receipt"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "macOS Application Inventory Supporting Files"
+    description: "BOM, App Store receipt and LaunchServices sources retained for manual corroboration"
+    paths:
+      - path: '^/private/var/db/receipts/[^/]+\.bom$'
+        regexp: true
+      - path: '^/.+\.app/Contents/_MASReceipt/receipt$'
+        regexp: true
+      - path: '^/private/var/folders/[^/]+/[^/]+/0/com\.apple\.LaunchServices\.dv/(?:SystemDataOnly-)?com\.apple\.LaunchServices-[0-9]+-v[0-9]+\.csstore$'
+        regexp: true
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "macOS Application Container Registrations"
+    description: "Per-user and system application container registration metadata"
+    paths:
+      - path: '^/(?:Users/[^/]+|private/var/(?:root|db/[^/]+))/Library/(?:Containers|Group Containers|Daemon Containers)/[^/]+/\.com\.apple\.containermanagerd\.metadata\.plist$'
+        regexp: true
+    parser: "macos_container_registration"
+    tag: "Installed Applications"
+    category: "application"
+
   - name: "macOS Unified Logs (tracev3)"
     description: "Apple unified logging store (high-volume system and app telemetry)"
     paths:
@@ -944,8 +991,8 @@ artifacts:
       - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/[^/]+/store\.db$'
         regexp: true
     parser: "macos_spotlight"
-    tag: "filesystem"
-    category: "system"
+    tag: "spotlight"
+    category: "application"
 
   - name: "macOS Spotlight Store Support Files"
     description: "Alternate Spotlight database generation and dbStr definition maps used as Store-V2 parser companions"
@@ -956,8 +1003,8 @@ artifacts:
         regexp: true
       - path: '^/Volumes/[^/]+/\.Spotlight-V100/Store-V2/[^/]+/(?:\.store\.db|dbStr-[1245]\.map\.(?:header|offsets|data|buckets))$'
         regexp: true
-    tag: "filesystem"
-    category: "system"
+    tag: "spotlight"
+    category: "application"
 
   - name: "macOS KnowledgeC Database"
     description: "CoreDuet behavioral timeline (apps, interactions, mobility context)"
@@ -1630,17 +1677,86 @@ artifacts:
     tag: "logs"
     category: "system"
 
-  - name: "iOS Application State Plists"
-    description: "Application install, frontmost-state and usage metadata plists"
+  - name: "iOS Installed Application Manifests"
+    description: "Primary iOS application bundle manifests proving code presence at acquisition"
     paths:
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/FrontBoard/applicationState\.db$'
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/Applications/[^/]+\.app/Info\.plist$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SpringBoard/IconState\.plist$'
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/containers/Bundle/Application/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/[^/]+\.app/Info\.plist$'
         regexp: true
-      - path: '^(?:/[^/]+)*/private/var/mobile/Library/SpringBoard/LastLaunchServicesMap\.plist$'
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Applications/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/[^/]+\.app/Info\.plist$'
         regexp: true
-    tag: "user_activity"
-    category: "system"
+    parser: "mobile_ios_app_manifest"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS Application Container Metadata"
+    description: "MobileContainerManager bundle, data and shared-group registration metadata"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/containers/Bundle/Application/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/\.com\.apple\.mobile_container_manager\.metadata\.plist$'
+        regexp: true
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Containers/Data/Application/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/\.com\.apple\.mobile_container_manager\.metadata\.plist$'
+        regexp: true
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Containers/Shared/AppGroup/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/\.com\.apple\.mobile_container_manager\.metadata\.plist$'
+        regexp: true
+    parser: "mobile_ios_app_container"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS Application Inventory Supporting Plists"
+    description: "App Store and system application state sources retained for manual corroboration"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/containers/Bundle/Application/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/iTunesMetadata\.plist$'
+        regexp: true
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/installd/Library/MobileInstallation/BackedUpState/SystemAppInstallState\.plist$'
+        regexp: true
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Library/Caches/com\.apple\.mobile\.installation\.plist$'
+        regexp: true
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS FrontBoard Application State Database"
+    description: "FrontBoard application registration and state observations"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Library/FrontBoard/applicationState\.db$'
+        regexp: true
+    parser: "mobile_ios_frontboard"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS FrontBoard Application State Companion Files"
+    description: "FrontBoard applicationState WAL/SHM sidecars replayed during parsing"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Library/FrontBoard/applicationState\.db-(wal|shm)$'
+        regexp: true
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS Home Screen Application State"
+    description: "SpringBoard home-screen, folder, page and widget placement observations"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Library/SpringBoard/IconState\.plist$'
+        regexp: true
+    parser: "mobile_ios_iconstate"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS MobileInstallation Logs"
+    description: "Application installation, update, failure and removal history with device-local timestamps"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/installd/Library/Logs/MobileInstallation/mobile_installation\.log(?:\.[0-9]+)?$'
+        regexp: true
+    parser: "mobile_ios_mobileinstallation_log"
+    tag: "Installed Applications"
+    category: "application"
+
+  - name: "iOS Legacy Application State Maps"
+    description: "Legacy LaunchServices application-state maps retained as source files pending a fixture-backed parser"
+    paths:
+      - path: '^(?:/(?:filesystem[0-9]+|volume_[0-9]+))?/private/var/mobile/Library/SpringBoard/LastLaunchServicesMap\.plist$'
+        regexp: true
+    tag: "Installed Applications"
+    category: "application"
 
   - name: "iOS WhatsApp Application Logs"
     description: "WhatsApp application log files within the app and shared group containers"

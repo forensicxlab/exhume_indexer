@@ -5,6 +5,7 @@ use exhume_filesystem::{File, Filesystem};
 use sqlx::sqlite::SqlitePool;
 use sqlx::types::Json;
 use sqlx::Row;
+use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -714,7 +715,8 @@ pub async fn index_partition_with_format(
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut body = Body::new(disk_image_path, body_format);
+    let mut body = Body::try_new(disk_image_path, body_format)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
     let sector_size = body.get_sector_size() as u64;
     let partition_size_bytes = size_sectors * sector_size;
 
@@ -1021,4 +1023,40 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::index_partition_with_format;
+    use sqlx::SqlitePool;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn missing_evidence_open_error_is_returned_to_the_caller() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "exhume-indexer-missing-{}-{unique}.raw",
+            std::process::id()
+        ));
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").expect("lazy in-memory pool");
+
+        let error = index_partition_with_format(
+            1,
+            1,
+            1,
+            0,
+            path.to_string_lossy().into_owned(),
+            "auto",
+            &pool,
+            None,
+            None,
+        )
+        .await
+        .expect_err("a missing evidence source must fail without terminating the process");
+
+        assert!(error.to_string().contains("failed to open evidence"));
+    }
 }
