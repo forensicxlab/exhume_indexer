@@ -1,7 +1,8 @@
 [package]
 name = "exhume_indexer"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.92"
 description = "Filesystem indexing and artefact extraction for Exhume."
 repository = "https://github.com/forensicxlab/exhume_indexer"
 documentation = "https://www.forensicxlab.com/docs/category/exhume---indexer"
@@ -12,9 +13,9 @@ keywords = ["forensics", "dfir", "indexer", "sqlite", "exhume"]
 include = ["Cargo.toml", "LICENSE", "README.md", "artifacts.yaml", "src/**/*.rs"]
 
 [dependencies]
-exhume_body = "=0.5.7"
-exhume_filesystem = "=0.5.6"
-exhume_artefacts = "=0.3.4"
+exhume_body = "=0.6.0"
+exhume_filesystem = "=0.6.0"
+exhume_artefacts = "=0.4.0"
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "json"] }
