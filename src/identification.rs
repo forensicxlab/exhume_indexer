@@ -49,7 +49,13 @@ pub async fn identify_file_types<T: Filesystem>(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::FileSignature,
+                        code: crate::report::IndexIssueCode::Database,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -88,7 +94,13 @@ pub async fn identify_file_types<T: Filesystem>(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::FileSignature,
+                        code: crate::report::IndexIssueCode::Database,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -108,12 +120,18 @@ pub async fn identify_file_types<T: Filesystem>(
         let path = row.get::<String, _>("absolute_path");
 
         // FS record - Try ID first, then fallback to path for FolderFS
-        let record = match fs.get_file(record_id) {
+        let record = match fs.get_file(record_id).map_err(|error| error.to_string()) {
             Ok(rec) => rec,
-            Err(_) => match fs.get_file_by_path(&path, record_id) {
+            Err(_) => match fs
+                .get_file_by_path(&path, record_id)
+                .map_err(|error| error.to_string())
+            {
                 Ok(rec) => rec,
                 Err(e) => {
-                    error!("get_file error id={record_id} path={path}: {e}");
+                    let message = format!("get_file error id={record_id} path={path}: {e}");
+                    error!("{message}");
+                    signature_issue(&tx_progress, evidence_id, record_id, &path, message, false)
+                        .await;
                     continue;
                 }
             },
@@ -124,10 +142,15 @@ pub async fn identify_file_types<T: Filesystem>(
         }
 
         // Efficient prefix read
-        let prefix = match fs.read_file_prefix(&record, SAMPLE_LEN) {
+        let prefix = match fs
+            .read_file_prefix(&record, SAMPLE_LEN)
+            .map_err(|error| error.to_string())
+        {
             Ok(v) => v,
             Err(e) => {
-                error!("read_file_prefix error id={record_id}: {e}");
+                let message = format!("read_file_prefix error id={record_id}: {e}");
+                error!("{message}");
+                signature_issue(&tx_progress, evidence_id, record_id, &path, message, false).await;
                 continue;
             }
         };
@@ -181,6 +204,8 @@ pub async fn identify_file_types<T: Filesystem>(
 
         if let Some(msg) = update_err {
             error!("{}", msg);
+            signature_issue(&tx_progress, evidence_id, record_id, &path, msg, true).await;
+            return;
         }
 
         processed += 1;
@@ -213,7 +238,13 @@ pub async fn identify_file_types<T: Filesystem>(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::FileSignature,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )
@@ -233,6 +264,35 @@ pub async fn identify_file_types<T: Filesystem>(
             evidence_id,
             event_type: IndexerEventType::Success,
             message: format!("File-signature identification done for {total} files."),
+        },
+    )
+    .await;
+}
+
+async fn signature_issue(
+    progress: &Option<Sender<IndexerEvent>>,
+    evidence_id: i64,
+    record_id: u64,
+    path: &str,
+    message: String,
+    fatal: bool,
+) {
+    send_progress(
+        progress,
+        IndexerEvent {
+            evidence_id,
+            event_type: IndexerEventType::Issue {
+                phase: crate::report::IndexPhase::FileSignature,
+                code: if fatal {
+                    crate::report::IndexIssueCode::Database
+                } else {
+                    crate::report::IndexIssueCode::FileRead
+                },
+                path: Some(path.to_owned()),
+                record_id: Some(record_id),
+                fatal,
+            },
+            message,
         },
     )
     .await;

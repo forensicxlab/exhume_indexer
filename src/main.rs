@@ -2,14 +2,14 @@ use anyhow::{Context, Result};
 use clap::{crate_authors, crate_version, value_parser, Arg, ArgAction, Command};
 use clap_num::maybe_hex;
 use exhume_artefacts::parsers::build_registry;
-use exhume_body::Body;
+use exhume_body::{credentials, Body, BodyOpenOptions};
 use exhume_filesystem::detected_fs::{detect_filesystem, detect_filesystem_from_path, KeyMaterial};
 use exhume_indexer::artifacts::{extract_artefacts, identify_artefacts};
 use exhume_indexer::identification::identify_file_types;
 use exhume_indexer::{
-    ensure_evidence_row, ensure_tables, index_folder, index_partition_with_format,
-    insert_partition, populate_filesystem_timeline, update_partition, IndexerEvent,
-    IndexerEventType, PartitionKind,
+    ensure_evidence_row, ensure_tables, index_folder_with_report,
+    index_partition_with_options_report, insert_partition, populate_filesystem_timeline,
+    update_partition, IndexerEvent, IndexerEventType, PartitionKind,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -22,9 +22,24 @@ use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    let matches = Command::new("exhume_indexer")
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(error) => {
+            eprintln!("exhume_indexer: {error:#}");
+            std::process::ExitCode::from(1)
+        }
+    }
+}
+
+async fn run() -> Result<u8> {
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGINT, cancel.clone())?;
+    #[cfg(unix)]
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, cancel.clone())?;
+    let command = Command::new("exhume_indexer")
         .version(crate_version!())
+        .arg(Arg::new("json_report").long("json-report").action(ArgAction::SetTrue).help("Print the final index run and coverage report as JSON."))
         .author(crate_authors!())
         .about("Index a filesystem partition into an Exhume SQLite database.")
         .arg(
@@ -107,7 +122,7 @@ async fn main() -> Result<()> {
             Arg::new("no_progress")
                 .long("no-progress")
                 .action(ArgAction::SetTrue)
-                .help("Disable interactive progress bars and print plain progress messages."),
+                .help("Disable interactive progress bars and log progress at the configured verbosity."),
         )
         .arg(
             Arg::new("log_level")
@@ -117,12 +132,14 @@ async fn main() -> Result<()> {
                 .default_value("info")
                 .help("Set the log verbosity level."),
         )
-        .get_matches();
+        ;
+    let matches = password_args(command).get_matches();
 
     let log_level = matches
         .get_one::<String>("log_level")
         .expect("defaulted by clap");
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level.clone())),
         )
@@ -152,10 +169,19 @@ async fn main() -> Result<()> {
     let artifacts_yaml_path = matches
         .get_one::<String>("artifacts_yaml")
         .map(String::as_str);
+    let body_options = credentials::read_open_options(
+        &body_path,
+        format,
+        matches
+            .get_one::<String>("password_file")
+            .map(String::as_str),
+        matches.get_flag("password_stdin"),
+    )
+    .map_err(anyhow::Error::msg)?;
     let detected_sector_size = if is_directory {
         0
     } else {
-        Body::new(body_path.clone(), format).get_sector_size() as u64
+        Body::open(body_path.clone(), format, &body_options)?.get_sector_size() as u64
     };
 
     if !is_directory
@@ -169,7 +195,7 @@ async fn main() -> Result<()> {
             anyhow::bail!("--fvek is only supported when indexing a disk image partition");
         }
         if matches.get_one::<String>("format").is_some() {
-            eprintln!("[WARNING] --format is ignored when indexing a folder");
+            log::warn!("--format is ignored when indexing a folder");
         }
     }
 
@@ -216,27 +242,28 @@ async fn main() -> Result<()> {
     let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
 
     let index_result = if is_directory {
-        index_folder(
+        index_folder_with_report(
             evidence_id,
             partition_id,
             body_path.clone(),
             &pool,
             Some(tx.clone()),
-            None,
+            Some(cancel.clone()),
         )
-        .await;
-        Ok(())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
     } else {
-        index_partition_with_format(
+        index_partition_with_options_report(
             evidence_id,
             partition_id,
             size_sectors,
             first_byte_addr,
             body_path.clone(),
             format,
+            &body_options,
             &pool,
             Some(tx.clone()),
-            None,
+            Some(cancel.clone()),
         )
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))
@@ -244,7 +271,20 @@ async fn main() -> Result<()> {
 
     drop(tx);
     let _ = monitor.await;
-    index_result?;
+    let mut report = index_result?;
+    if matches!(
+        report.status,
+        exhume_indexer::IndexStatus::Cancelled | exhume_indexer::IndexStatus::Aborted
+    ) {
+        if matches.get_flag("json_report") {
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        return Ok(if report.status == exhume_indexer::IndexStatus::Cancelled {
+            130
+        } else {
+            1
+        });
+    }
 
     if run_identify_files || run_extract_artefacts {
         let mut fs = reopen_input(
@@ -254,54 +294,134 @@ async fn main() -> Result<()> {
             first_byte_addr,
             size_sectors,
             matches.get_one::<String>("fvek").map(String::as_str),
+            &body_options,
         )?;
 
+        use exhume_indexer::report::{run_reported_phase, IndexPhase};
         if run_identify_files {
             let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
             let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
-            identify_file_types(&mut fs, evidence_id, partition_id, &pool, Some(tx.clone())).await;
+            let result = run_reported_phase(
+                &pool,
+                &mut report,
+                IndexPhase::FileSignature,
+                Some(tx.clone()),
+                Some(cancel.clone()),
+                |sender| async {
+                    identify_file_types(&mut fs, evidence_id, partition_id, &pool, Some(sender))
+                        .await;
+                },
+            )
+            .await;
             drop(tx);
             let _ = monitor.await;
+            result.map_err(|e| anyhow::anyhow!(e.to_string()))?;
         }
-
         if run_extract_artefacts {
             let registry = build_registry();
-
-            let (tx1, rx1) = mpsc::channel::<IndexerEvent>(100);
-            let monitor1 = tokio::spawn(progress_monitor(rx1, progress_enabled));
-            identify_artefacts(
-                evidence_id,
-                partition_id,
+            let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
+            let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
+            let result = run_reported_phase(
                 &pool,
-                Some(tx1.clone()),
-                artifacts_yaml_path,
+                &mut report,
+                IndexPhase::ArtifactIdentification,
+                Some(tx.clone()),
+                Some(cancel.clone()),
+                |sender| async {
+                    identify_artefacts(
+                        evidence_id,
+                        partition_id,
+                        &pool,
+                        Some(sender),
+                        artifacts_yaml_path,
+                    )
+                    .await;
+                },
             )
             .await;
-            drop(tx1);
-            let _ = monitor1.await;
-
-            let (tx2, rx2) = mpsc::channel::<IndexerEvent>(100);
-            let monitor2 = tokio::spawn(progress_monitor(rx2, progress_enabled));
-            extract_artefacts(
-                evidence_id,
-                partition_id,
+            drop(tx);
+            let _ = monitor.await;
+            result.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
+            let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
+            let result = run_reported_phase(
                 &pool,
-                &mut fs,
-                &registry,
-                Some(tx2.clone()),
-                None,
+                &mut report,
+                IndexPhase::ArtifactExtraction,
+                Some(tx.clone()),
+                Some(cancel.clone()),
+                |sender| async {
+                    extract_artefacts(
+                        evidence_id,
+                        partition_id,
+                        &pool,
+                        &mut fs,
+                        &registry,
+                        Some(sender),
+                        Some(cancel.clone()),
+                    )
+                    .await;
+                },
             )
             .await;
-            drop(tx2);
-            let _ = monitor2.await;
-
-            populate_filesystem_timeline(evidence_id, partition_id, &pool)
+            drop(tx);
+            let _ = monitor.await;
+            result.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            if report.status != exhume_indexer::IndexStatus::Cancelled {
+                let timeline_pool = &pool;
+                run_reported_phase(
+                    &pool,
+                    &mut report,
+                    IndexPhase::ArtifactExtraction,
+                    None,
+                    Some(cancel.clone()),
+                    |sender| async move {
+                        if let Err(error) =
+                            populate_filesystem_timeline(evidence_id, partition_id, timeline_pool)
+                                .await
+                        {
+                            let _ = sender
+                                .send(IndexerEvent {
+                                    evidence_id,
+                                    event_type: IndexerEventType::Issue {
+                                        phase: IndexPhase::ArtifactExtraction,
+                                        code: exhume_indexer::report::IndexIssueCode::Database,
+                                        path: None,
+                                        record_id: None,
+                                        fatal: true,
+                                    },
+                                    message: format!(
+                                        "Failed to populate filesystem timeline: {error}"
+                                    ),
+                                })
+                                .await;
+                        }
+                    },
+                )
                 .await
-                .context("Failed to populate filesystem timeline")?;
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            }
         }
     }
-
-    Ok(())
+    // Discovery already announced its summary through the progress channel.
+    // Analysis passes can change that status, so report their final coverage.
+    if matches.get_flag("identify_files") || matches.get_flag("extract_artefacts") {
+        if report.status == exhume_indexer::IndexStatus::CompletedWithIssues {
+            log::warn!("{}", report.summary());
+        } else {
+            log::info!("{}", report.summary());
+        }
+    }
+    if matches.get_flag("json_report") {
+        println!("{}", serde_json::to_string(&report)?);
+    }
+    Ok(if report.status == exhume_indexer::IndexStatus::Cancelled {
+        130
+    } else if report.status == exhume_indexer::IndexStatus::Complete {
+        0
+    } else {
+        2
+    })
 }
 
 fn default_database_path(body_path: &str) -> PathBuf {
@@ -400,12 +520,13 @@ fn reopen_input(
     first_byte_addr: u64,
     size_sectors: u64,
     fvek_hex: Option<&str>,
+    options: &BodyOpenOptions,
 ) -> Result<impl exhume_filesystem::Filesystem> {
     if is_directory {
         return detect_filesystem_from_path(body_path).map_err(|e| anyhow::anyhow!(e.to_string()));
     }
 
-    let mut body = Body::new(body_path.to_owned(), format);
+    let mut body = Body::open(body_path.to_owned(), format, options)?;
     let sector_size = body.get_sector_size() as u64;
     let partition_size_bytes = size_sectors * sector_size;
     let key_material = parse_key_material(fvek_hex)?;
@@ -469,8 +590,14 @@ async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>, progress_enabled
             IndexerEventType::Success => {
                 bar.finish_with_message(event.message);
             }
-            IndexerEventType::Warning => {
-                bar.println(format!("[WARNING] {}", event.message));
+            IndexerEventType::WalkIssue(_) => {}
+            IndexerEventType::Warning => log::warn!("{}", event.message),
+            IndexerEventType::Issue { fatal, .. } => {
+                if fatal {
+                    log::error!("{}", event.message);
+                } else {
+                    log::warn!("{}", event.message);
+                }
             }
             IndexerEventType::Error => {
                 bar.abandon_with_message(event.message);
@@ -486,9 +613,10 @@ async fn progress_monitor(mut rx: mpsc::Receiver<IndexerEvent>, progress_enabled
 async fn plain_progress_monitor(rx: &mut mpsc::Receiver<IndexerEvent>) {
     while let Some(event) = rx.recv().await {
         match event.event_type {
-            IndexerEventType::Info => eprintln!("[INFO] {}", event.message),
+            IndexerEventType::WalkIssue(_) => {}
+            IndexerEventType::Info | IndexerEventType::Success => log::info!("{}", event.message),
             IndexerEventType::Progress { current, total } => {
-                eprintln!("[PROGRESS] {current}/{total} {}", event.message)
+                log::info!("{current}/{total}: {}", event.message)
             }
             IndexerEventType::ParserProgress {
                 parser,
@@ -496,14 +624,20 @@ async fn plain_progress_monitor(rx: &mut mpsc::Receiver<IndexerEvent>) {
                 current,
                 total,
                 ..
-            } => eprintln!(
-                "[PARSER] {current}/{total} {parser} {}: {}",
+            } => log::info!(
+                "{current}/{total} {parser} {}: {}",
                 phase.as_str(),
                 event.message
             ),
-            IndexerEventType::Success => eprintln!("[SUCCESS] {}", event.message),
-            IndexerEventType::Warning => eprintln!("[WARNING] {}", event.message),
-            IndexerEventType::Error => eprintln!("[ERROR] {}", event.message),
+            IndexerEventType::Warning => log::warn!("{}", event.message),
+            IndexerEventType::Issue { fatal, .. } => {
+                if fatal {
+                    log::error!("{}", event.message);
+                } else {
+                    log::warn!("{}", event.message);
+                }
+            }
+            IndexerEventType::Error => log::error!("{}", event.message),
         }
     }
 }
@@ -518,4 +652,24 @@ fn progress_style() -> ProgressStyle {
     )
     .expect("progress template should be valid")
     .progress_chars("=> ")
+}
+
+/// Register this executable's mutually exclusive container-password sources.
+fn password_args(command: clap::Command) -> clap::Command {
+    command
+        .arg(
+            clap::Arg::new("password_file")
+                .long("password-file")
+                .global(true)
+                .value_name("PATH")
+                .conflicts_with("password_stdin")
+                .help("Read the image container password from a file; remove one trailing line ending."),
+        )
+        .arg(
+            clap::Arg::new("password_stdin")
+                .long("password-stdin")
+                .global(true)
+                .action(clap::ArgAction::SetTrue)
+                .help("Read the image container password from stdin; remove one trailing line ending."),
+        )
 }

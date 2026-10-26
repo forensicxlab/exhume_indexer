@@ -5,7 +5,6 @@ use exhume_artefacts::{
     ParserFileProvider, ParserInput, ParserSource,
 };
 use exhume_filesystem::filesystem::{FileCommon, FsFileReadSeek};
-use exhume_filesystem::File;
 use exhume_filesystem::Filesystem;
 use regex::escape;
 use serde::{Deserialize, Serialize};
@@ -172,36 +171,6 @@ pub fn load_artifact_catalog() -> Vec<ArtifactCatalogEntry> {
             }
         })
         .collect()
-}
-
-fn decode_system_file_row(row: &sqlx::sqlite::SqliteRow) -> Result<File, sqlx::Error> {
-    Ok(File {
-        id: row.try_get("id")?,
-        // SQLite stores INTEGER as signed i64. Reinterpret wrapped values so
-        // folder-backed identifiers above i64::MAX round-trip correctly.
-        identifier: row.try_get::<i64, _>("identifier")? as u64,
-        absolute_path: row.try_get("absolute_path")?,
-        name: row.try_get("name")?,
-        ftype: row.try_get("ftype")?,
-        size: row.try_get::<i64, _>("size")? as u64,
-        created: row
-            .try_get::<Option<i64>, _>("created")?
-            .map(|value| value as u64),
-        modified: row
-            .try_get::<Option<i64>, _>("modified")?
-            .map(|value| value as u64),
-        accessed: row
-            .try_get::<Option<i64>, _>("accessed")?
-            .map(|value| value as u64),
-        permissions: row.try_get("permissions")?,
-        owner: row.try_get("owner")?,
-        group: row.try_get("group")?,
-        display: row.try_get("display")?,
-        sig_name: row.try_get("sig_name")?,
-        sig_mime: row.try_get("sig_mime")?,
-        sig_exts: row.try_get("sig_exts")?,
-        metadata: row.try_get("metadata")?,
-    })
 }
 
 #[cfg(test)]
@@ -1086,7 +1055,13 @@ pub async fn identify_artefacts(
                     &tx_progress,
                     IndexerEvent {
                         evidence_id,
-                        event_type: IndexerEventType::Error,
+                        event_type: IndexerEventType::Issue {
+                            phase: crate::report::IndexPhase::ArtifactIdentification,
+                            code: crate::report::IndexIssueCode::InvalidConfiguration,
+                            path: None,
+                            record_id: None,
+                            fatal: true,
+                        },
                         message: msg.clone(),
                     },
                 )
@@ -1106,7 +1081,13 @@ pub async fn identify_artefacts(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::ArtifactIdentification,
+                        code: crate::report::IndexIssueCode::InvalidConfiguration,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -1135,7 +1116,13 @@ pub async fn identify_artefacts(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactIdentification,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )
@@ -1161,7 +1148,13 @@ pub async fn identify_artefacts(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactIdentification,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )
@@ -1187,7 +1180,13 @@ pub async fn identify_artefacts(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactIdentification,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )
@@ -1214,7 +1213,13 @@ pub async fn identify_artefacts(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactIdentification,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )
@@ -1235,7 +1240,7 @@ pub async fn identify_artefacts(
 
     // Fetch all files once to avoid redundant queries in the loop
     let all_files_res = sqlx::query(
-        "SELECT * FROM system_files \
+        "SELECT id,absolute_path FROM system_files \
              WHERE evidence_id = ?1 \
              AND partition_id = ?2;",
     )
@@ -1248,26 +1253,10 @@ pub async fn identify_artefacts(
         Ok(rows) => {
             let mut files = Vec::with_capacity(rows.len());
             for row in rows {
-                match decode_system_file_row(&row) {
-                    Ok(file) => files.push(file),
-                    Err(e) => {
-                        let msg = format!(
-                            "Failed to decode system_files row for partition {}: {}",
-                            partition_id, e
-                        );
-                        send_progress(
-                            &tx_progress,
-                            IndexerEvent {
-                                evidence_id,
-                                event_type: IndexerEventType::Error,
-                                message: msg.clone(),
-                            },
-                        )
-                        .await;
-                        error!("{}", msg);
-                        return;
-                    }
-                }
+                files.push((
+                    row.get::<i64, _>("id"),
+                    row.get::<String, _>("absolute_path"),
+                ));
             }
             files
         }
@@ -1280,7 +1269,13 @@ pub async fn identify_artefacts(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::ArtifactIdentification,
+                        code: crate::report::IndexIssueCode::Database,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -1309,12 +1304,19 @@ pub async fn identify_artefacts(
                         &tx_progress,
                         IndexerEvent {
                             evidence_id,
-                            event_type: IndexerEventType::Error,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactIdentification,
+                                code: crate::report::IndexIssueCode::InvalidConfiguration,
+                                path: None,
+                                record_id: None,
+                                fatal: true,
+                            },
                             message: msg.clone(),
                         },
                     )
                     .await;
                     error!("{}", msg);
+                    return;
                 }
             }
         }
@@ -1346,26 +1348,21 @@ pub async fn identify_artefacts(
     let progress_interval = (total_files / 100).max(10_000);
     let mut matched_artefacts = 0u64;
     for (index, file) in all_files.iter().enumerate() {
-        let logical_path = strip_apfs_volume_namespace(&file.absolute_path);
+        let logical_path = strip_apfs_volume_namespace(&file.1);
         for (artifact, regexes) in &compiled_artifacts {
             let mut matched = false;
             for rx in regexes {
-                if rx.is_match(&file.absolute_path)
-                    || logical_path.is_some_and(|path| rx.is_match(path))
-                {
+                if rx.is_match(&file.1) || logical_path.is_some_and(|path| rx.is_match(path)) {
                     matched = true;
                     break;
                 }
             }
 
             if matched {
-                info!(
-                    "Artifact matched ({}): {}",
-                    artifact.name, file.absolute_path
-                );
+                info!("Artifact matched ({}): {}", artifact.name, file.1);
                 if let Err(err) = sqlx::query(stmt)
                     .bind(evidence_id)
-                    .bind(file.id.unwrap_or(0) as i64)
+                    .bind(file.0)
                     .bind(partition_id)
                     .bind(&artifact.name)
                     .bind(&artifact.description)
@@ -1380,12 +1377,19 @@ pub async fn identify_artefacts(
                         &tx_progress,
                         IndexerEvent {
                             evidence_id,
-                            event_type: IndexerEventType::Error,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactIdentification,
+                                code: crate::report::IndexIssueCode::Database,
+                                path: None,
+                                record_id: None,
+                                fatal: true,
+                            },
                             message: msg.clone(),
                         },
                     )
                     .await;
                     error!("{}", msg);
+                    return;
                 } else {
                     matched_artefacts += 1;
                 }
@@ -1440,6 +1444,7 @@ fn strip_apfs_volume_namespace(path: &str) -> Option<&str> {
     Some(&rest[slash..])
 }
 
+#[cfg(test)]
 fn extract_artefact<F: Filesystem>(
     fs: &mut F,
     parser: &dyn ArtefactParser,
@@ -1448,6 +1453,35 @@ fn extract_artefact<F: Filesystem>(
     fs_identifier: u64,
     absolute_path: &str,
     companions: Vec<ParserSource>,
+) -> Result<Vec<ObjectParsed>>
+where
+    F::FileType: FileCommon,
+{
+    extract_artefact_with_diagnostics(
+        fs,
+        parser,
+        artifact_id,
+        system_file_id,
+        fs_identifier,
+        absolute_path,
+        companions,
+        &mut |issue| {
+            log::warn!("{}", issue.message);
+            Ok(())
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_artefact_with_diagnostics<F: Filesystem>(
+    fs: &mut F,
+    parser: &dyn ArtefactParser,
+    artifact_id: Option<i64>,
+    system_file_id: Option<i64>,
+    fs_identifier: u64,
+    absolute_path: &str,
+    companions: Vec<ParserSource>,
+    diagnostic: &mut dyn FnMut(exhume_artefacts::ParserIssue) -> Result<()>,
 ) -> Result<Vec<ObjectParsed>>
 where
     F::FileType: FileCommon,
@@ -1480,7 +1514,11 @@ where
     if parser.companion_specs().is_empty() && !parser.requires_source_metadata() {
         // Adapter: Read+Seek backed by Filesystem::read_file_slice
         let rs = FsFileReadSeek::new(fs, record);
-        parser.run_into(ParserInput::ReadSeek(Box::new(rs)), &mut sink)?;
+        parser.run_into_with_diagnostics(
+            ParserInput::ReadSeek(Box::new(rs)),
+            &mut sink,
+            diagnostic,
+        )?;
     } else {
         let primary = ParserSource::new(
             "primary",
@@ -1494,7 +1532,7 @@ where
             companions,
             provider: Box::new(FilesystemParserFileProvider { fs }),
         });
-        parser.run_into(input, &mut sink)?;
+        parser.run_into_with_diagnostics(input, &mut sink, diagnostic)?;
     }
 
     Ok(out)
@@ -2200,7 +2238,13 @@ pub async fn extract_artefacts<F: Filesystem>(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::ArtifactExtraction,
+                        code: crate::report::IndexIssueCode::Database,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -2234,7 +2278,13 @@ pub async fn extract_artefacts<F: Filesystem>(
                 &tx_progress,
                 IndexerEvent {
                     evidence_id,
-                    event_type: IndexerEventType::Error,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::ArtifactExtraction,
+                        code: crate::report::IndexIssueCode::Database,
+                        path: None,
+                        record_id: None,
+                        fatal: true,
+                    },
                     message: msg.clone(),
                 },
             )
@@ -2279,7 +2329,13 @@ pub async fn extract_artefacts<F: Filesystem>(
                     &tx_progress,
                     IndexerEvent {
                         evidence_id,
-                        event_type: IndexerEventType::Error,
+                        event_type: IndexerEventType::Issue {
+                            phase: crate::report::IndexPhase::ArtifactExtraction,
+                            code: crate::report::IndexIssueCode::UnknownParser,
+                            path: Some(abs_path.clone()),
+                            record_id: Some(fs_identifier_i64 as u64),
+                            fatal: false,
+                        },
                         message: msg.clone(),
                     },
                 )
@@ -2331,6 +2387,7 @@ pub async fn extract_artefacts<F: Filesystem>(
         {
             Ok(companions) => companions,
             Err(e) => {
+                let database_failure = e.downcast_ref::<sqlx::Error>().is_some();
                 let elapsed_ms = elapsed_millis(parser_started_at);
                 if let Some(stats) = parser_stats.get_mut(parser_name) {
                     stats.failures += 1;
@@ -2362,12 +2419,25 @@ pub async fn extract_artefacts<F: Filesystem>(
                     &tx_progress,
                     IndexerEvent {
                         evidence_id,
-                        event_type: IndexerEventType::Error,
+                        event_type: IndexerEventType::Issue {
+                            phase: crate::report::IndexPhase::ArtifactExtraction,
+                            code: if database_failure {
+                                crate::report::IndexIssueCode::Database
+                            } else {
+                                crate::report::IndexIssueCode::ParserFailed
+                            },
+                            path: Some(abs_path.clone()),
+                            record_id: Some(fs_identifier_i64 as u64),
+                            fatal: database_failure,
+                        },
                         message: msg.clone(),
                     },
                 )
                 .await;
                 error!("{}", msg);
+                if database_failure {
+                    return;
+                }
                 continue;
             }
         };
@@ -2375,7 +2445,8 @@ pub async fn extract_artefacts<F: Filesystem>(
         let setup_ms = elapsed_millis(parser_started_at);
         let parser_call_started_at = Instant::now();
 
-        let objs = match extract_artefact(
+        let mut parser_issues = Vec::new();
+        let parsed = extract_artefact_with_diagnostics(
             fs,
             &**parser,
             Some(artifact_id),
@@ -2383,7 +2454,32 @@ pub async fn extract_artefacts<F: Filesystem>(
             fs_identifier_i64 as u64,
             &abs_path,
             companions,
-        ) {
+            &mut |issue| {
+                parser_issues.push(issue);
+                Ok(())
+            },
+        );
+        for issue in parser_issues {
+            send_progress(
+                &tx_progress,
+                IndexerEvent {
+                    evidence_id,
+                    event_type: IndexerEventType::Issue {
+                        phase: crate::report::IndexPhase::ArtifactExtraction,
+                        code: crate::report::IndexIssueCode::ParserPartial,
+                        path: Some(abs_path.clone()),
+                        record_id: Some(fs_identifier_i64 as u64),
+                        fatal: false,
+                    },
+                    message: format!(
+                        "{} (parser {}, unit {:?})",
+                        issue.message, parser_name, issue.unit
+                    ),
+                },
+            )
+            .await;
+        }
+        let objs = match parsed {
             Ok(v) => v,
             Err(e) => {
                 let parse_ms = elapsed_millis(parser_call_started_at);
@@ -2418,7 +2514,13 @@ pub async fn extract_artefacts<F: Filesystem>(
                     &tx_progress,
                     IndexerEvent {
                         evidence_id,
-                        event_type: IndexerEventType::Error,
+                        event_type: IndexerEventType::Issue {
+                            phase: crate::report::IndexPhase::ArtifactExtraction,
+                            code: crate::report::IndexIssueCode::ParserFailed,
+                            path: Some(abs_path.clone()),
+                            record_id: Some(fs_identifier_i64 as u64),
+                            fatal: false,
+                        },
                         message: msg.clone(),
                     },
                 )
@@ -2460,13 +2562,19 @@ pub async fn extract_artefacts<F: Filesystem>(
                         &tx_progress,
                         IndexerEvent {
                             evidence_id,
-                            event_type: IndexerEventType::Error,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactExtraction,
+                                code: crate::report::IndexIssueCode::Database,
+                                path: None,
+                                record_id: None,
+                                fatal: true,
+                            },
                             message: msg.clone(),
                         },
                     )
                     .await;
                     error!("{}", msg);
-                    vec![None; objs.len()]
+                    return;
                 }
             }
         };
@@ -2516,13 +2624,19 @@ pub async fn extract_artefacts<F: Filesystem>(
                         &tx_progress,
                         IndexerEvent {
                             evidence_id,
-                            event_type: IndexerEventType::Error,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactExtraction,
+                                code: crate::report::IndexIssueCode::Database,
+                                path: None,
+                                record_id: None,
+                                fatal: true,
+                            },
                             message: msg.clone(),
                         },
                     )
                     .await;
                     error!("{}", msg);
-                    continue;
+                    return;
                 }
             };
 
@@ -2549,7 +2663,25 @@ pub async fn extract_artefacts<F: Filesystem>(
                 .execute(&mut *tx)
                 .await
                 {
-                    error!("Timeline event insert error (parser={object_parser}): {e:?}");
+                    let message =
+                        format!("Timeline event insert error (parser={object_parser}): {e:?}");
+                    send_progress(
+                        &tx_progress,
+                        IndexerEvent {
+                            evidence_id,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactExtraction,
+                                code: crate::report::IndexIssueCode::Database,
+                                path: Some(abs_path.clone()),
+                                record_id: Some(fs_identifier_i64 as u64),
+                                fatal: true,
+                            },
+                            message: message.clone(),
+                        },
+                    )
+                    .await;
+                    error!("{}", message);
+                    return;
                 }
             }
 
@@ -2570,12 +2702,19 @@ pub async fn extract_artefacts<F: Filesystem>(
                         &tx_progress,
                         IndexerEvent {
                             evidence_id,
-                            event_type: IndexerEventType::Error,
+                            event_type: IndexerEventType::Issue {
+                                phase: crate::report::IndexPhase::ArtifactExtraction,
+                                code: crate::report::IndexIssueCode::Database,
+                                path: None,
+                                record_id: None,
+                                fatal: true,
+                            },
                             message: msg.clone(),
                         },
                     )
                     .await;
                     error!("{}", msg);
+                    return;
                 }
             }
         }
@@ -2635,7 +2774,13 @@ pub async fn extract_artefacts<F: Filesystem>(
             &tx_progress,
             IndexerEvent {
                 evidence_id,
-                event_type: IndexerEventType::Error,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactExtraction,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
                 message: msg.clone(),
             },
         )

@@ -1,6 +1,6 @@
 [package]
 name = "exhume_indexer"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.92"
 description = "Filesystem indexing and artefact extraction for Exhume."
@@ -13,11 +13,12 @@ keywords = ["forensics", "dfir", "indexer", "sqlite", "exhume"]
 include = ["Cargo.toml", "LICENSE", "README.md", "artifacts.yaml", "src/**/*.rs"]
 
 [dependencies]
-exhume_body = "=0.6.0"
-exhume_filesystem = "=0.6.0"
-exhume_artefacts = "=0.4.0"
+log = "0.4"
+exhume_body = "=0.7.0"
+exhume_filesystem = "=0.7.0"
+exhume_artefacts = "=0.5.0"
 
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -31,3 +32,6 @@ regex = "1.10.5"
 anyhow = "1"
 clap = { version = "4.5", features = ["cargo"] }
 clap-num = "1.1.1"
+tempfile = "3"
+
+signal-hook = "0.3"

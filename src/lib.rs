@@ -1,19 +1,21 @@
-use exhume_body::Body;
+use exhume_body::{Body, BodyOpenOptions};
 use exhume_filesystem::detected_fs::{detect_filesystem, KeyMaterial};
 use exhume_filesystem::folder_impl::FolderFS;
-use exhume_filesystem::{File, Filesystem};
+use exhume_filesystem::Filesystem;
 use sqlx::sqlite::SqlitePool;
-use sqlx::types::Json;
 use sqlx::Row;
-use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
 
 pub mod artifacts;
 pub mod identification;
+pub mod report;
+pub use report::{
+    index_filesystem_with_report, latest_inventory_report, load_index_report, IndexReport,
+    IndexStatus,
+};
 
 /// The raw YAML source for the artifact catalog, embedded at compile time.
 /// Consumers can parse it with `ArtifactSet::from_yaml_str`.
@@ -22,6 +24,16 @@ pub const ARTIFACTS_YAML: &str = include_str!("../artifacts.yaml");
 #[derive(Debug, Clone)]
 pub enum IndexerEventType {
     Info,
+    /// Structured discovery diagnostic. The walker already logged this issue.
+    WalkIssue(exhume_filesystem::WalkIssue),
+    /// A durable analysis issue; display messages remain human-readable.
+    Issue {
+        phase: report::IndexPhase,
+        code: report::IndexIssueCode,
+        path: Option<String>,
+        record_id: Option<u64>,
+        fatal: bool,
+    },
     Progress {
         current: u64,
         total: u64,
@@ -379,7 +391,31 @@ pub async fn populate_filesystem_timeline(
     Ok(())
 }
 
+/// Compatibility entry point that reports failures through progress events.
+/// Use [`try_index_filesystem`] when the caller needs a returned error.
 pub async fn index_filesystem<T: Filesystem>(
+    fs: &mut T,
+    evidence_id: i64,
+    partition_id: i64,
+    pool: &SqlitePool,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
+    path_prefix: Option<&str>,
+) {
+    let _ = try_index_filesystem(
+        fs,
+        evidence_id,
+        partition_id,
+        pool,
+        tx_progress,
+        cancel_token,
+        path_prefix,
+    )
+    .await;
+}
+
+/// Index atomically, returning discovery, database, and cancellation failures.
+pub async fn try_index_filesystem<T: Filesystem>(
     fs: &mut T,
     evidence_id: i64,
     partition_id: i64,
@@ -389,295 +425,26 @@ pub async fn index_filesystem<T: Filesystem>(
     // For folder evidence: the host filesystem root stored in `host_path` for shell operations.
     // Pass None for disk image partitions (no direct host path mapping exists).
     path_prefix: Option<&str>,
-) {
-    info!("Starting filesystem indexation…");
-
-    let prepare_err = match sqlx::query(
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_files_identifier
-            ON system_files(identifier);
-        CREATE INDEX IF NOT EXISTS idx_files_ev_path
-            ON system_files(evidence_id, absolute_path);
-        "#,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let report = index_filesystem_with_report(
+        fs,
+        evidence_id,
+        partition_id,
+        pool,
+        tx_progress,
+        cancel_token,
+        path_prefix,
     )
-    .execute(pool)
-    .await
-    {
-        Ok(_) => None,
-        Err(e) => Some(format!("Could not prepare DB: {e:?}")),
-    };
-
-    if let Some(msg) = prepare_err {
-        send_progress(
-            &tx_progress,
-            IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            },
+    .await?;
+    match report.status {
+        IndexStatus::Cancelled => Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "filesystem indexing cancelled",
         )
-        .await;
-        error!("{}", msg);
-        return;
+        .into()),
+        IndexStatus::Aborted | IndexStatus::Failed => Err(report.summary().into()),
+        _ => Ok(()),
     }
-
-    let mut files = Vec::<File>::new();
-    let mut discovered = 0;
-
-    send_progress(
-        &tx_progress,
-        IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Progress {
-                current: 0,
-                total: 0,
-            },
-            message: "Discovering files in the filesystem…".to_string(),
-        },
-    )
-    .await;
-
-    let tx_clone = tx_progress.clone();
-    let walk_err = match fs.walk_fs(&mut |event| match event {
-        exhume_filesystem::filesystem::WalkEvent::File(f) => {
-            files.push(f);
-            discovered += 1;
-            if discovered <= 20 || discovered % 25 == 0 {
-                if let Some(sender) = &tx_clone {
-                    let _ = sender.try_send(IndexerEvent {
-                        evidence_id,
-                        event_type: IndexerEventType::Progress {
-                            current: discovered,
-                            total: 0,
-                        },
-                        message: format!("Discovering files… {discovered} found so far."),
-                    });
-                }
-            }
-        }
-        exhume_filesystem::filesystem::WalkEvent::Status(msg) => {
-            if let Some(sender) = &tx_clone {
-                let _ = sender.try_send(IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Info,
-                    message: msg,
-                });
-            }
-        }
-    }) {
-        Ok(_) => None,
-        Err(e) => Some(format!("Failed to walk filesystem: {e}")),
-    };
-
-    if let Some(msg) = walk_err {
-        send_progress(
-            &tx_progress,
-            IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            },
-        )
-        .await;
-        error!("{}", msg);
-        return;
-    }
-
-    send_progress(
-        &tx_progress,
-        IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Info,
-            message: format!("Discovery complete. {discovered} files found."),
-        },
-    )
-    .await;
-
-    send_progress(
-        &tx_progress,
-        IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Info,
-            message: "Ingesting files into the database…".to_string(),
-        },
-    )
-    .await;
-
-    let total = files.len() as u64;
-    let mut inserted = 0u64;
-
-    let tx_obj = match pool.begin().await {
-        Ok(t) => Some(t),
-        Err(e) => {
-            let msg = format!("Could not open DB transaction: {e:?}");
-            send_progress(
-                &tx_progress,
-                IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                },
-            )
-            .await;
-            error!("{}", msg);
-            None
-        }
-    };
-
-    let mut tx = match tx_obj {
-        Some(t) => t,
-        None => return,
-    };
-
-    let stmt = r#"
-        INSERT INTO system_files (
-            evidence_id,
-            partition_id,
-            identifier,
-            absolute_path,
-            name,
-            ftype,
-            size,
-            created,
-            modified,
-            accessed,
-            permissions,
-            owner,
-            "group",
-            display,
-            path_key,
-            parent_path_key,
-            depth,
-            is_dir,
-            sig_name,
-            sig_mime,
-            sig_exts,
-            host_path,
-            metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    "#;
-
-    for f in &files {
-        if let Some(token) = &cancel_token {
-            if token.load(Ordering::Relaxed) {
-                // Abort processing without committing.
-                return;
-            }
-        }
-
-        let created = f.created.map(|value| value as i64);
-        let modified = f.modified.map(|value| value as i64);
-        let accessed = f.accessed.map(|value| value as i64);
-        let path_key = normalize_path_key(&f.absolute_path);
-        let parent_path_key = compute_parent_path_key(&path_key);
-        let depth = compute_depth(&path_key);
-        let is_dir = if is_directory_type(&f.ftype) {
-            1i64
-        } else {
-            0i64
-        };
-
-        // For folder evidence, compute the real host filesystem path.
-        // absolute_path stays as the logical forensic path (used by artifact pattern matching).
-        // host_path is what the agent should use for shell operations.
-        let host_path: Option<String> = path_prefix.map(|prefix| {
-            let p = prefix.trim_end_matches('/');
-            if f.absolute_path == "/" || f.absolute_path.is_empty() {
-                p.to_string()
-            } else {
-                format!("{}{}", p, f.absolute_path)
-            }
-        });
-
-        let insert_err = match sqlx::query(stmt)
-            .bind(evidence_id)
-            .bind(partition_id)
-            .bind(f.identifier as i64)
-            .bind(&f.absolute_path)
-            .bind(&f.name)
-            .bind(&f.ftype)
-            .bind(f.size as i64)
-            .bind(created)
-            .bind(modified)
-            .bind(accessed)
-            .bind(&f.permissions)
-            .bind(&f.owner)
-            .bind(&f.group)
-            .bind(&f.display)
-            .bind(&path_key)
-            .bind(&parent_path_key)
-            .bind(depth)
-            .bind(is_dir)
-            .bind(Option::<String>::None)
-            .bind(Option::<String>::None)
-            .bind(Option::<String>::None)
-            .bind(host_path)
-            .bind(Json(&f.metadata))
-            .execute(&mut *tx)
-            .await
-        {
-            Ok(_) => None,
-            Err(e) => Some(format!("Insert error: {e:?}")),
-        };
-
-        if let Some(msg) = insert_err {
-            send_progress(
-                &tx_progress,
-                IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Error,
-                    message: msg.clone(),
-                },
-            )
-            .await;
-            error!("{}", msg);
-        }
-
-        inserted += 1;
-        if inserted % 500 == 0 || inserted == total {
-            send_progress(
-                &tx_progress,
-                IndexerEvent {
-                    evidence_id,
-                    event_type: IndexerEventType::Progress {
-                        current: inserted,
-                        total,
-                    },
-                    message: format!("Indexed {inserted}/{total} items…"),
-                },
-            )
-            .await;
-        }
-    }
-
-    let commit_err = match tx.commit().await {
-        Ok(_) => None,
-        Err(e) => Some(format!("Commit error: {e:?}")),
-    };
-
-    if let Some(msg) = commit_err {
-        send_progress(
-            &tx_progress,
-            IndexerEvent {
-                evidence_id,
-                event_type: IndexerEventType::Error,
-                message: msg.clone(),
-            },
-        )
-        .await;
-        error!("{}", msg);
-        return;
-    }
-
-    send_progress(
-        &tx_progress,
-        IndexerEvent {
-            evidence_id,
-            event_type: IndexerEventType::Success,
-            message: format!("Successfully ingested {total} items into the database."),
-        },
-    )
-    .await;
 }
 
 pub async fn index_partition(
@@ -715,8 +482,79 @@ pub async fn index_partition_with_format(
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut body = Body::try_new(disk_image_path, body_format)
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+    index_partition_with_options(
+        evidence_id,
+        partition_id,
+        size_sectors,
+        first_byte_addr,
+        disk_image_path,
+        body_format,
+        &BodyOpenOptions::default(),
+        pool,
+        tx_progress,
+        cancel_token,
+    )
+    .await
+}
+
+/// Index with caller-supplied container credentials kept outside the database.
+/// This never prompts and does not use the password as a BitLocker volume key.
+#[allow(clippy::too_many_arguments)]
+pub async fn index_partition_with_options(
+    evidence_id: i64,
+    partition_id: i64,
+    size_sectors: u64,
+    first_byte_addr: u64,
+    disk_image_path: String,
+    body_format: &str,
+    options: &BodyOpenOptions,
+    pool: &SqlitePool,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let report = index_partition_with_options_report(
+        evidence_id,
+        partition_id,
+        size_sectors,
+        first_byte_addr,
+        disk_image_path,
+        body_format,
+        options,
+        pool,
+        tx_progress,
+        cancel_token,
+    )
+    .await?;
+    report_result(&report)
+}
+
+fn report_result(report: &IndexReport) -> Result<(), Box<dyn std::error::Error>> {
+    match report.status {
+        IndexStatus::Cancelled => Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "filesystem indexing cancelled",
+        )
+        .into()),
+        IndexStatus::Aborted | IndexStatus::Failed => Err(report.summary().into()),
+        _ => Ok(()),
+    }
+}
+
+/// Open an evidence partition and return its persisted inventory/coverage report.
+#[allow(clippy::too_many_arguments)]
+pub async fn index_partition_with_options_report(
+    evidence_id: i64,
+    partition_id: i64,
+    size_sectors: u64,
+    first_byte_addr: u64,
+    disk_image_path: String,
+    body_format: &str,
+    options: &BodyOpenOptions,
+    pool: &SqlitePool,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
+) -> Result<IndexReport, Box<dyn std::error::Error>> {
+    let mut body = Body::open(disk_image_path, body_format, options)?;
     let sector_size = body.get_sector_size() as u64;
     let partition_size_bytes = size_sectors * sector_size;
 
@@ -739,7 +577,7 @@ pub async fn index_partition_with_format(
         key_material,
     )?;
 
-    index_filesystem(
+    index_filesystem_with_report(
         &mut fs,
         evidence_id,
         partition_id,
@@ -748,8 +586,7 @@ pub async fn index_partition_with_format(
         cancel_token,
         None, // disk image partitions have no direct host path mapping
     )
-    .await;
-    Ok(())
+    .await
 }
 
 pub async fn index_folder(
@@ -760,9 +597,50 @@ pub async fn index_folder(
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
 ) {
+    let _ = try_index_folder(
+        evidence_id,
+        partition_id,
+        folder_path,
+        pool,
+        tx_progress,
+        cancel_token,
+    )
+    .await;
+}
+
+/// Folder indexing with returned failures; [`index_folder`] retains its
+/// progress-event-only API for existing callers.
+pub async fn try_index_folder(
+    evidence_id: i64,
+    partition_id: i64,
+    folder_path: String,
+    pool: &SqlitePool,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let report = index_folder_with_report(
+        evidence_id,
+        partition_id,
+        folder_path,
+        pool,
+        tx_progress,
+        cancel_token,
+    )
+    .await?;
+    report_result(&report)
+}
+
+pub async fn index_folder_with_report(
+    evidence_id: i64,
+    partition_id: i64,
+    folder_path: String,
+    pool: &SqlitePool,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel_token: Option<Arc<AtomicBool>>,
+) -> Result<IndexReport, Box<dyn std::error::Error>> {
     let path = PathBuf::from(&folder_path);
     let mut fs = FolderFS::new(path);
-    index_filesystem(
+    index_filesystem_with_report(
         &mut fs,
         evidence_id,
         partition_id,
@@ -1022,6 +900,7 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    report::ensure_schema(pool).await?;
     Ok(())
 }
 
