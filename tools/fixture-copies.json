@@ -1,0 +1,10 @@
+{
+  "src/recovery/fixtures/signal-keys.json": "signal-keys.json",
+  "src/recovery/fixtures/signal-macos.keychain-db": "signal-macos.keychain-db",
+  "src/recovery/fixtures/signal-linux.json": "linux-values.json",
+  "src/formats/gnome_keyring/fixtures/synthetic-signal.keyring": "linux-gnome.keyring",
+  "src/formats/gnome_keyring/fixtures/synthetic-ambiguous.keyring": "linux-gnome-ambiguous.keyring",
+  "src/formats/kwallet/fixtures/synthetic-signal.kwl": "linux-wallet.kwl",
+  "src/formats/kwallet/fixtures/synthetic-signal.salt": "linux-wallet.salt",
+  "tests/fixtures/signal-attachment.json": "signal-attachment.json"
+}

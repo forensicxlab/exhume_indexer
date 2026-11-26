@@ -177,17 +177,94 @@ pub fn load_artifact_catalog() -> Vec<ArtifactCatalogEntry> {
 mod tests {
     use super::{
         attachment_local_path, attachment_path_candidates, extract_artefact, infer_platform,
-        resolve_attachment_file, resolve_attachment_files_batch, strip_apfs_volume_namespace,
-        ArtifactPath, ArtifactSet,
+        resolve_attachment_file, resolve_attachment_files_batch, resolve_companion_sources,
+        strip_apfs_volume_namespace, ArtifactPath, ArtifactSet,
     };
     use anyhow::Result;
-    use exhume_artefacts::{ObjectParsed, Parser};
+    use exhume_artefacts::{CompanionSpec, ObjectParsed, Parser};
     use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, Filesystem};
     use exhume_filesystem::File as ExhumeFile;
     use serde_json::{json, Value};
     use sqlx::sqlite::SqlitePoolOptions;
     use std::error::Error;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn extension_companions_preserve_evidence_partition_and_source_identity() -> Result<()> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await?;
+        sqlx::query("CREATE TABLE system_files (id INTEGER PRIMARY KEY, evidence_id INTEGER, partition_id INTEGER, identifier INTEGER, absolute_path TEXT);")
+            .execute(&pool).await?;
+        sqlx::query("CREATE TABLE artifacts (id INTEGER PRIMARY KEY, evidence_id INTEGER, partition_id INTEGER, file_id INTEGER);")
+            .execute(&pool).await?;
+        for (id, evidence, partition, path) in [
+            (
+                1,
+                1,
+                2,
+                "/volume/home/alice/.local/share/kwalletd/custom.wallet.salt",
+            ),
+            (
+                2,
+                9,
+                2,
+                "/volume/home/alice/.local/share/kwalletd/custom.wallet.salt",
+            ),
+            (
+                3,
+                1,
+                8,
+                "/volume/home/alice/.local/share/kwalletd/custom.wallet.salt",
+            ),
+            (
+                4,
+                1,
+                2,
+                "/volume/home/alice/.local/share/kwalletd/custom.wallet.kwl.salt",
+            ),
+        ] {
+            sqlx::query("INSERT INTO system_files VALUES (?, ?, ?, ?, ?)")
+                .bind(id)
+                .bind(evidence)
+                .bind(partition)
+                .bind(100 + id)
+                .bind(path)
+                .execute(&pool)
+                .await?;
+        }
+        sqlx::query("INSERT INTO artifacts VALUES (50,1,2,1)")
+            .execute(&pool)
+            .await?;
+        let mut tx = pool.begin().await?;
+        let sources = resolve_companion_sources(
+            &mut tx,
+            1,
+            2,
+            "/volume/home/alice/.local/share/kwalletd/custom.wallet.kwl",
+            &[CompanionSpec::optional_extension("salt", "salt")],
+        )
+        .await?;
+        assert_eq!(sources.len(), 1);
+        assert_eq!(
+            sources[0].original_path,
+            "/volume/home/alice/.local/share/kwalletd/custom.wallet.salt"
+        );
+        assert_eq!(sources[0].artifact_id, Some(50));
+        assert_eq!(sources[0].system_file_id, Some(1));
+        assert_eq!(sources[0].fs_identifier, Some(101));
+        assert!(resolve_companion_sources(
+            &mut tx,
+            1,
+            2,
+            "/volume/missing.kwl",
+            &[CompanionSpec::optional_extension("salt", "salt"),]
+        )
+        .await?
+        .is_empty());
+        Ok(())
+    }
 
     #[derive(Clone)]
     struct TestFile {
@@ -1073,6 +1150,32 @@ pub async fn identify_artefacts(
         None => default_yaml.to_string(),
     };
 
+    if let Err(error) =
+        sqlx::query("DELETE FROM recovery_jobs WHERE evidence_id=? AND partition_id=?")
+            .bind(evidence_id)
+            .bind(partition_id)
+            .execute(pool)
+            .await
+    {
+        error!("Failed to invalidate recovery jobs before identification: {error}");
+        send_progress(
+            &tx_progress,
+            IndexerEvent {
+                evidence_id,
+                event_type: IndexerEventType::Issue {
+                    phase: crate::report::IndexPhase::ArtifactIdentification,
+                    code: crate::report::IndexIssueCode::Database,
+                    path: None,
+                    record_id: None,
+                    fatal: true,
+                },
+                message: "Failed to invalidate recovery jobs before identification".into(),
+            },
+        )
+        .await;
+        return;
+    }
+
     let artifact_set: ArtifactSet = match ArtifactSet::from_yaml_str(&yaml_text) {
         Ok(s) => s,
         Err(e) => {
@@ -1368,7 +1471,7 @@ pub async fn identify_artefacts(
                     .bind(&artifact.description)
                     .bind(&artifact.parser)
                     .bind(&artifact.tag)
-                    .bind(format!("{:?}", &artifact.category))
+                    .bind(format!("{:?}", artifact.category))
                     .execute(pool)
                     .await
                 {
@@ -1397,7 +1500,7 @@ pub async fn identify_artefacts(
         }
 
         let current = index as u64 + 1;
-        if current % progress_interval == 0 || current == total_files {
+        if current.is_multiple_of(progress_interval) || current == total_files {
             send_progress(
                 &tx_progress,
                 IndexerEvent {
@@ -1593,6 +1696,11 @@ async fn resolve_companion_sources(
                 Some(idx) => format!("{}{}", &primary_path[..=idx], filename),
                 None => filename.to_string(),
             },
+            CompanionPathRule::Extension(extension) => std::path::Path::new(primary_path)
+                .with_extension(extension)
+                .into_os_string()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("companion path is not valid UTF-8"))?,
         };
 
         let row = sqlx::query(
@@ -1652,17 +1760,17 @@ async fn resolve_companion_sources(
 const ATTACHMENT_EXACT_PATH_BATCH_SIZE: usize = 500;
 
 #[derive(Debug, Clone)]
-struct ResolvedAttachmentFile {
-    id: i64,
-    identifier: i64,
-    absolute_path: String,
+pub(crate) struct ResolvedAttachmentFile {
+    pub(crate) id: i64,
+    pub(crate) identifier: i64,
+    pub(crate) absolute_path: String,
     host_path: Option<String>,
     sig_mime: Option<String>,
     name: Option<String>,
-    size: Option<i64>,
+    pub(crate) size: Option<i64>,
 }
 
-async fn insert_attachment_ref(
+pub(crate) async fn insert_attachment_ref(
     tx: &mut Transaction<'_, Sqlite>,
     evidence_id: i64,
     partition_id: i64,
@@ -1763,7 +1871,7 @@ async fn insert_attachment_ref(
 /// number of indexed queries. The result vector is positionally aligned with
 /// `objects`; non-attachment objects and attachments without usable paths are
 /// represented by `None`.
-async fn resolve_attachment_files_batch(
+pub(crate) async fn resolve_attachment_files_batch(
     tx: &mut Transaction<'_, Sqlite>,
     evidence_id: i64,
     partition_id: i64,
@@ -1777,6 +1885,13 @@ async fn resolve_attachment_files_batch(
             }
             let source_path = json_string(&object.json, &["source", "path"]);
             let local_path = attachment_local_path(&object.json);
+            if object.parser == "desktop_signal" {
+                return signal_attachment_candidates(
+                    source_path.as_deref()?,
+                    local_path.as_deref()?,
+                    &object.json,
+                );
+            }
             attachment_path_candidates(source_path.as_deref(), local_path.as_deref()?)
         })
         .collect::<Vec<_>>();
@@ -2028,6 +2143,41 @@ fn attachment_path_candidates(
     })
 }
 
+fn signal_attachment_candidates(
+    source: &str,
+    local: &str,
+    json: &Value,
+) -> Option<AttachmentPathCandidates> {
+    let native_windows = source.starts_with('\\');
+    if json_string(json, &["attachment", "local_path_base"]).as_deref()
+        != Some("attachments.noindex")
+    {
+        return None;
+    }
+    let source = normalize_evidence_path(source)?;
+    let profile = source.rsplit_once('/')?.0.strip_suffix("/sql")?;
+    let base = format!("{profile}/attachments.noindex/");
+    let local = normalize_evidence_path(local)?;
+    let path = if local.starts_with('/') {
+        if !local.starts_with(&base) {
+            return None;
+        }
+        local
+    } else {
+        format!("{base}{local}")
+    };
+    Some(AttachmentPathCandidates {
+        // Preserve the source inventory's representation for exact lookup.
+        // Native NTFS paths have backslashes; folder exports use slashes.
+        exact: vec![if native_windows {
+            path.replace('/', "\\")
+        } else {
+            path
+        }],
+        scoped_suffix: None,
+    })
+}
+
 fn normalize_evidence_path(path: &str) -> Option<String> {
     let mut path = path.trim().trim_end_matches('\0').replace('\\', "/");
     if let Some(file_path) = path.strip_prefix("file://") {
@@ -2140,7 +2290,7 @@ struct ParserRunStats {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn send_parser_progress(
+pub(crate) async fn send_parser_progress(
     tx_progress: &Option<Sender<IndexerEvent>>,
     evidence_id: i64,
     current: u64,
@@ -2185,7 +2335,79 @@ fn elapsed_millis(started_at: Instant) -> u64 {
     u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-pub async fn extract_artefacts<F: Filesystem>(
+/// Recover and parse with no supplied credentials or prompts, returning failures.
+/// Unresolved targets remain durable and are reported as analysis issues.
+pub async fn extract_artefacts<F: Filesystem + Send>(
+    evidence_id: i64,
+    partition_id: i64,
+    pool: &SqlitePool,
+    fs: &mut F,
+    registry: &ParserRegistry,
+    progress: Option<Sender<IndexerEvent>>,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<crate::recovery::RecoveryReport>
+where
+    F::FileType: FileCommon + Send,
+{
+    let mut session = crate::recovery::RecoverySession::default();
+    let report = extract_artefacts_with_recovery(
+        evidence_id,
+        partition_id,
+        pool,
+        fs,
+        registry,
+        &mut session,
+        progress.clone(),
+        cancel,
+    )
+    .await?;
+    crate::recovery::report_recovery_outcomes(pool, &report, progress).await?;
+    Ok(report)
+}
+
+/// Ordinary parsers run first. Signal profiles then recover/parse outside the
+/// partition transaction. The caller owns credential collection and final reporting.
+#[allow(clippy::too_many_arguments)]
+pub async fn extract_artefacts_with_recovery<F: Filesystem + Send>(
+    evidence_id: i64,
+    partition_id: i64,
+    pool: &SqlitePool,
+    fs: &mut F,
+    registry: &ParserRegistry,
+    session: &mut crate::recovery::RecoverySession,
+    progress: Option<Sender<IndexerEvent>>,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<crate::recovery::RecoveryReport>
+where
+    F::FileType: FileCommon + Send,
+{
+    extract_standard_artefacts(
+        evidence_id,
+        partition_id,
+        pool,
+        fs,
+        registry,
+        progress.clone(),
+        cancel.clone(),
+    )
+    .await?;
+    crate::recovery::process_recovery_jobs(
+        crate::recovery::RecoveryScope {
+            evidence_id,
+            partition_id,
+        },
+        pool,
+        fs,
+        registry,
+        session,
+        None,
+        progress,
+        cancel,
+    )
+    .await
+}
+
+async fn extract_standard_artefacts<F: Filesystem>(
     evidence_id: i64,
     partition_id: i64,
     pool: &SqlitePool,
@@ -2193,7 +2415,8 @@ pub async fn extract_artefacts<F: Filesystem>(
     registry: &ParserRegistry,
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
-) where
+) -> Result<()>
+where
     F::FileType: FileCommon,
 {
     send_progress(
@@ -2250,9 +2473,17 @@ pub async fn extract_artefacts<F: Filesystem>(
             )
             .await;
             error!("{}", msg);
-            return;
+            return Err(e.into());
         }
     };
+
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|row| {
+            let parser: String = row.get("parser_name");
+            !crate::recovery::manages_parser(parser.trim())
+        })
+        .collect();
 
     if rows.is_empty() {
         send_progress(
@@ -2264,7 +2495,7 @@ pub async fn extract_artefacts<F: Filesystem>(
             },
         )
         .await;
-        return;
+        return Ok(());
     }
 
     let total = rows.len() as u64;
@@ -2290,7 +2521,7 @@ pub async fn extract_artefacts<F: Filesystem>(
             )
             .await;
             error!("{}", msg);
-            return;
+            return Err(e.into());
         }
     };
 
@@ -2436,7 +2667,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                 .await;
                 error!("{}", msg);
                 if database_failure {
-                    return;
+                    return Err(e);
                 }
                 continue;
             }
@@ -2574,7 +2805,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                     )
                     .await;
                     error!("{}", msg);
-                    return;
+                    return Err(e);
                 }
             }
         };
@@ -2636,7 +2867,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                     )
                     .await;
                     error!("{}", msg);
-                    return;
+                    return Err(e.into());
                 }
             };
 
@@ -2681,7 +2912,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                     )
                     .await;
                     error!("{}", message);
-                    return;
+                    return Err(e.into());
                 }
             }
 
@@ -2714,7 +2945,7 @@ pub async fn extract_artefacts<F: Filesystem>(
                     )
                     .await;
                     error!("{}", msg);
-                    return;
+                    return Err(e);
                 }
             }
         }
@@ -2757,7 +2988,7 @@ pub async fn extract_artefacts<F: Filesystem>(
              path={abs_path:?}"
         );
 
-        if processed_files % 50 == 0 || processed_files == total {
+        if processed_files.is_multiple_of(50) || processed_files == total {
             send_progress(&tx_progress, IndexerEvent {
                 evidence_id,
                 event_type: IndexerEventType::Progress { current: processed_files, total },
@@ -2786,7 +3017,7 @@ pub async fn extract_artefacts<F: Filesystem>(
         )
         .await;
         error!("{}", msg);
-        return;
+        return Err(e.into());
     }
 
     send_progress(
@@ -2812,4 +3043,5 @@ pub async fn extract_artefacts<F: Filesystem>(
             stats.files, stats.failures, stats.objects_emitted, stats.elapsed_ms
         );
     }
+    Ok(())
 }

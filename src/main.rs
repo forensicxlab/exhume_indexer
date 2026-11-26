@@ -4,7 +4,10 @@ use clap_num::maybe_hex;
 use exhume_artefacts::parsers::build_registry;
 use exhume_body::{credentials, Body, BodyOpenOptions};
 use exhume_filesystem::detected_fs::{detect_filesystem, detect_filesystem_from_path, KeyMaterial};
-use exhume_indexer::artifacts::{extract_artefacts, identify_artefacts};
+use exhume_indexer::artifacts::identify_artefacts;
+use exhume_indexer::recovery::{self, RecoveryReport, RecoveryScope, RecoverySession};
+mod cli;
+use cli::recovery as recovery_cli;
 use exhume_indexer::identification::identify_file_types;
 use exhume_indexer::{
     ensure_evidence_row, ensure_tables, index_folder_with_report,
@@ -133,7 +136,12 @@ async fn run() -> Result<u8> {
                 .help("Set the log verbosity level."),
         )
         ;
-    let matches = password_args(command).get_matches();
+    let matches = password_args(recovery_cli::arguments(command)).get_matches();
+    let recovery_options = recovery_cli::RecoveryCli::from_matches(&matches)?;
+    let mut recovery_session = RecoverySession::default();
+    recovery_options.load_secrets(&mut recovery_session)?;
+    let mut recovery_report = RecoveryReport::default();
+    let mut retry_fvek = None;
 
     let log_level = matches
         .get_one::<String>("log_level")
@@ -161,8 +169,8 @@ async fn run() -> Result<u8> {
     let evidence_id = *matches
         .get_one::<i64>("evidence_id")
         .expect("defaulted by clap");
-    let first_byte_addr = matches.get_one::<u64>("offset").copied().unwrap_or(0);
-    let size_sectors = matches.get_one::<u64>("size").copied().unwrap_or(0);
+    let mut first_byte_addr = matches.get_one::<u64>("offset").copied().unwrap_or(0);
+    let mut size_sectors = matches.get_one::<u64>("size").copied().unwrap_or(0);
     let run_identify_files = matches.get_flag("identify_files");
     let run_extract_artefacts = matches.get_flag("extract_artefacts");
     let progress_enabled = !matches.get_flag("no_progress") && std::io::stderr().is_terminal();
@@ -185,6 +193,7 @@ async fn run() -> Result<u8> {
     };
 
     if !is_directory
+        && !recovery_options.retry
         && (matches.get_one::<u64>("offset").is_none() || matches.get_one::<u64>("size").is_none())
     {
         anyhow::bail!("--offset and --size are required when indexing a disk image or body");
@@ -201,19 +210,50 @@ async fn run() -> Result<u8> {
 
     let pool = open_pool(&database_path).await?;
     ensure_tables(&pool).await?;
-    ensure_evidence_row(&pool, evidence_id, &body_path, is_directory).await?;
+    if recovery_options.retry {
+        let registered: Option<(String, String)> =
+            sqlx::query_as("SELECT path,type FROM evidence WHERE id=?")
+                .bind(evidence_id)
+                .fetch_optional(&pool)
+                .await?;
+        let (registered, kind) =
+            registered.context("retry requires an existing evidence registration")?;
+        anyhow::ensure!(
+            kind.eq_ignore_ascii_case("Folder") == is_directory,
+            "retry input kind differs from the registered evidence"
+        );
+        anyhow::ensure!(
+            std::fs::canonicalize(&registered)? == std::fs::canonicalize(&body_path)?,
+            "retry source differs from the registered evidence"
+        );
+    } else {
+        ensure_evidence_row(&pool, evidence_id, &body_path, is_directory).await?;
+    }
 
     let partition_id = match matches.get_one::<i64>("partition_id").copied() {
         Some(id) => {
-            upsert_logical_partition(
-                &pool,
-                evidence_id,
-                id,
-                first_byte_addr,
-                size_sectors,
-                detected_sector_size,
-            )
-            .await?;
+            if recovery_options.retry {
+                let partition = exhume_indexer::get_partition(&pool, id)
+                    .await?
+                    .context("retry partition is missing")?;
+                anyhow::ensure!(
+                    partition.evidence_id == evidence_id,
+                    "retry partition belongs to another evidence"
+                );
+                retry_fvek = partition.fvek;
+                first_byte_addr = partition.first_byte_addr;
+                size_sectors = partition.size_sectors;
+            } else {
+                upsert_logical_partition(
+                    &pool,
+                    evidence_id,
+                    id,
+                    first_byte_addr,
+                    size_sectors,
+                    detected_sector_size,
+                )
+                .await?;
+            }
             id
         }
         None => {
@@ -241,7 +281,12 @@ async fn run() -> Result<u8> {
     let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
     let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
 
-    let index_result = if is_directory {
+    let index_result = if recovery_options.retry {
+        exhume_indexer::latest_inventory_report(&pool, evidence_id, partition_id)
+            .await
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .context("retry requires a published file inventory")
+    } else if is_directory {
         index_folder_with_report(
             evidence_id,
             partition_id,
@@ -272,10 +317,12 @@ async fn run() -> Result<u8> {
     drop(tx);
     let _ = monitor.await;
     let mut report = index_result?;
-    if matches!(
-        report.status,
-        exhume_indexer::IndexStatus::Cancelled | exhume_indexer::IndexStatus::Aborted
-    ) {
+    if !recovery_options.retry
+        && matches!(
+            report.status,
+            exhume_indexer::IndexStatus::Cancelled | exhume_indexer::IndexStatus::Aborted
+        )
+    {
         if matches.get_flag("json_report") {
             println!("{}", serde_json::to_string(&report)?);
         }
@@ -286,14 +333,17 @@ async fn run() -> Result<u8> {
         });
     }
 
-    if run_identify_files || run_extract_artefacts {
+    if run_identify_files || run_extract_artefacts || recovery_options.retry {
         let mut fs = reopen_input(
             &body_path,
             format,
             is_directory,
             first_byte_addr,
             size_sectors,
-            matches.get_one::<String>("fvek").map(String::as_str),
+            matches
+                .get_one::<String>("fvek")
+                .map(String::as_str)
+                .or(retry_fvek.as_deref()),
             &body_options,
         )?;
 
@@ -344,29 +394,21 @@ async fn run() -> Result<u8> {
             result.map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let (tx, rx) = mpsc::channel::<IndexerEvent>(100);
             let monitor = tokio::spawn(progress_monitor(rx, progress_enabled));
-            let result = run_reported_phase(
+            let result = recovery::run_reported_recovery(
                 &pool,
+                &mut fs,
+                &registry,
+                &mut recovery_session,
                 &mut report,
-                IndexPhase::ArtifactExtraction,
+                None,
+                true,
                 Some(tx.clone()),
-                Some(cancel.clone()),
-                |sender| async {
-                    extract_artefacts(
-                        evidence_id,
-                        partition_id,
-                        &pool,
-                        &mut fs,
-                        &registry,
-                        Some(sender),
-                        Some(cancel.clone()),
-                    )
-                    .await;
-                },
+                cancel.clone(),
             )
             .await;
             drop(tx);
             let _ = monitor.await;
-            result.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            recovery_report = result?;
             if report.status != exhume_indexer::IndexStatus::Cancelled {
                 let timeline_pool = &pool;
                 run_reported_phase(
@@ -402,10 +444,89 @@ async fn run() -> Result<u8> {
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             }
         }
+
+        if recovery_options.retry {
+            let current = recovery::load_recovery_jobs(
+                &pool,
+                RecoveryScope {
+                    evidence_id,
+                    partition_id,
+                },
+            )
+            .await?;
+            anyhow::ensure!(!current.jobs.is_empty() || !matches!(report.status, exhume_indexer::IndexStatus::Cancelled | exhume_indexer::IndexStatus::Aborted),
+                "the prior run stopped before recovery discovery; rerun --extract-artefacts to establish its analysis coverage");
+            recovery_options.validate_scope(&current)?;
+            let selected = if recovery_options.selected.is_empty() {
+                current
+                    .jobs
+                    .iter()
+                    .filter(|job| !job.status.is_published())
+                    .map(|job| job.target_id.clone())
+                    .collect::<Vec<_>>()
+            } else {
+                recovery_options.selected.clone()
+            };
+            let registry = build_registry();
+            recovery::run_reported_recovery(
+                &pool,
+                &mut fs,
+                &registry,
+                &mut recovery_session,
+                &mut report,
+                Some(&selected),
+                false,
+                None,
+                cancel.clone(),
+            )
+            .await?;
+            recovery_report = recovery::load_recovery_jobs(
+                &pool,
+                RecoveryScope {
+                    evidence_id,
+                    partition_id,
+                },
+            )
+            .await?;
+        }
+        if run_extract_artefacts || recovery_options.retry {
+            if !recovery_options.retry {
+                recovery_options.validate_scope(&recovery_report)?;
+            }
+            if !cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                let selected = recovery_options.prompt(&recovery_report, &mut recovery_session)?;
+                if !selected.is_empty() {
+                    let registry = build_registry();
+                    recovery::run_reported_recovery(
+                        &pool,
+                        &mut fs,
+                        &registry,
+                        &mut recovery_session,
+                        &mut report,
+                        Some(&selected),
+                        false,
+                        None,
+                        cancel.clone(),
+                    )
+                    .await?;
+                    recovery_report = recovery::load_recovery_jobs(
+                        &pool,
+                        RecoveryScope {
+                            evidence_id,
+                            partition_id,
+                        },
+                    )
+                    .await?;
+                }
+            }
+        }
     }
     // Discovery already announced its summary through the progress channel.
     // Analysis passes can change that status, so report their final coverage.
-    if matches.get_flag("identify_files") || matches.get_flag("extract_artefacts") {
+    if matches.get_flag("identify_files")
+        || matches.get_flag("extract_artefacts")
+        || recovery_options.retry
+    {
         if report.status == exhume_indexer::IndexStatus::CompletedWithIssues {
             log::warn!("{}", report.summary());
         } else {
@@ -413,7 +534,11 @@ async fn run() -> Result<u8> {
         }
     }
     if matches.get_flag("json_report") {
-        println!("{}", serde_json::to_string(&report)?);
+        let mut json = serde_json::to_value(&report)?;
+        json.as_object_mut()
+            .context("index report must serialize as an object")?
+            .insert("recovery".into(), serde_json::to_value(&recovery_report)?);
+        println!("{}", serde_json::to_string(&json)?);
     }
     Ok(if report.status == exhume_indexer::IndexStatus::Cancelled {
         130
@@ -426,7 +551,7 @@ async fn run() -> Result<u8> {
 
 fn default_database_path(body_path: &str) -> PathBuf {
     let path = Path::new(body_path);
-    let file_name = path.file_name().unwrap_or_else(|| path.as_os_str());
+    let file_name = path.file_name().unwrap_or(path.as_os_str());
     let mut database_name = OsString::from(file_name);
     database_name.push(".sqlite");
 
@@ -521,23 +646,18 @@ fn reopen_input(
     size_sectors: u64,
     fvek_hex: Option<&str>,
     options: &BodyOpenOptions,
-) -> Result<impl exhume_filesystem::Filesystem> {
+) -> Result<impl exhume_filesystem::Filesystem<FileType: Send> + Send> {
     if is_directory {
         return detect_filesystem_from_path(body_path).map_err(|e| anyhow::anyhow!(e.to_string()));
     }
 
-    let mut body = Body::open(body_path.to_owned(), format, options)?;
+    let body = Body::open(body_path.to_owned(), format, options)?;
     let sector_size = body.get_sector_size() as u64;
     let partition_size_bytes = size_sectors * sector_size;
     let key_material = parse_key_material(fvek_hex)?;
 
-    detect_filesystem(
-        &mut body,
-        first_byte_addr,
-        partition_size_bytes,
-        key_material,
-    )
-    .map_err(|e| anyhow::anyhow!(e.to_string()))
+    detect_filesystem(&body, first_byte_addr, partition_size_bytes, key_material)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 fn parse_key_material(fvek_hex: Option<&str>) -> Result<Option<KeyMaterial>> {

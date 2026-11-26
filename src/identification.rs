@@ -209,7 +209,7 @@ pub async fn identify_file_types<T: Filesystem>(
         }
 
         processed += 1;
-        if processed % 500 == 0 || processed == total {
+        if processed.is_multiple_of(500) || processed == total {
             send_progress(
                 &tx_progress,
                 IndexerEvent {

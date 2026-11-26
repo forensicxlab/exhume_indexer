@@ -64,9 +64,51 @@ where
     F: FnOnce(Sender<IndexerEvent>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
-    let result = run_phase_inner(pool, report, phase, progress, cancel, operation)
-        .await
-        .map_err(|error| error.to_string());
+    run_reported_phase_inner(pool, report, phase, progress, cancel, operation, false).await
+}
+
+/// Allow an operation to finish its cooperative cancellation and transaction
+/// boundary before finalizing its durable phase report.
+pub async fn run_reported_phase_cooperatively<F, Fut>(
+    pool: &SqlitePool,
+    report: &mut IndexReport,
+    phase: IndexPhase,
+    progress: Option<Sender<IndexerEvent>>,
+    cancel: Option<Arc<AtomicBool>>,
+    operation: F,
+) -> IndexResult<()>
+where
+    F: FnOnce(Sender<IndexerEvent>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    run_reported_phase_inner(pool, report, phase, progress, cancel, operation, true).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_reported_phase_inner<F, Fut>(
+    pool: &SqlitePool,
+    report: &mut IndexReport,
+    phase: IndexPhase,
+    progress: Option<Sender<IndexerEvent>>,
+    cancel: Option<Arc<AtomicBool>>,
+    operation: F,
+    cooperative: bool,
+) -> IndexResult<()>
+where
+    F: FnOnce(Sender<IndexerEvent>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let result = run_phase_inner(
+        pool,
+        report,
+        phase,
+        progress,
+        cancel,
+        operation,
+        cooperative,
+    )
+    .await
+    .map_err(|error| error.to_string());
     if let Err(error) = &result {
         report.status = IndexStatus::Failed;
         let mut connection = pool.acquire().await?;
@@ -75,6 +117,7 @@ where
     result.map_err(Into::into)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_phase_inner<F, Fut>(
     pool: &SqlitePool,
     report: &mut IndexReport,
@@ -82,6 +125,7 @@ async fn run_phase_inner<F, Fut>(
     progress: Option<Sender<IndexerEvent>>,
     cancel: Option<Arc<AtomicBool>>,
     operation: F,
+    cooperative: bool,
 ) -> IndexResult<()>
 where
     F: FnOnce(Sender<IndexerEvent>) -> Fut,
@@ -150,6 +194,10 @@ where
         Ok::<_, std::io::Error>((file, count, fatal))
     };
     let execution = async {
+        if cooperative {
+            operation(sender).await;
+            return;
+        }
         let cancelled = async {
             if let Some(token) = &cancel {
                 while !token.load(std::sync::atomic::Ordering::Relaxed) {
@@ -167,6 +215,14 @@ where
     let (_, result) = tokio::join!(execution, collect);
     let (file, count, fatal) = result?;
     report.phase_issues += count;
+    report.recovery_issues = crate::recovery::current_issue_count(
+        pool,
+        crate::recovery::RecoveryScope {
+            evidence_id: report.evidence_id,
+            partition_id: report.partition_id,
+        },
+    )
+    .await?;
     report.status = if fatal {
         IndexStatus::Failed
     } else if cancel
@@ -254,14 +310,21 @@ pub struct IndexReport {
     pub indexed_paths: u64,
     pub walk: WalkReport,
     pub phase_issues: u64,
+    /// Current unresolved Signal jobs and diagnostics on published attempts.
+    /// Historical failed credential attempts do not keep a resolved job incomplete.
+    #[serde(default)]
+    pub recovery_issues: u64,
 }
 impl IndexReport {
     pub fn issue_count(&self) -> u64 {
-        self.walk.issues + self.phase_issues
+        self.walk
+            .issues
+            .saturating_add(self.phase_issues)
+            .saturating_add(self.recovery_issues)
     }
     pub fn summary(&self) -> String {
         format!("Index {}: {} paths indexed; {} entry gaps, {} unreadable subtrees, {} skipped index blocks, {} analysis issues (run {}).",
-            self.status.as_str(),self.indexed_paths,self.walk.skipped_entries,self.walk.unreadable_subtrees,self.walk.skipped_index_blocks,self.phase_issues,self.run_id)
+            self.status.as_str(),self.indexed_paths,self.walk.skipped_entries,self.walk.unreadable_subtrees,self.walk.skipped_index_blocks,self.phase_issues.saturating_add(self.recovery_issues),self.run_id)
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -304,6 +367,7 @@ pub async fn latest_inventory_report(
     evidence: i64,
     partition: i64,
 ) -> IndexResult<Option<IndexReport>> {
+    crate::recovery::ensure_schema(pool).await?;
     let value=sqlx::query_scalar::<_,String>("SELECT r.report_json FROM index_inventory i JOIN index_runs r ON r.id=i.run_id WHERE i.evidence_id=? AND i.partition_id=?")
         .bind(evidence).bind(partition).fetch_optional(pool).await?;
     value
@@ -311,6 +375,7 @@ pub async fn latest_inventory_report(
         .transpose()
 }
 pub async fn load_index_report(pool: &SqlitePool, run: i64) -> IndexResult<IndexReport> {
+    crate::recovery::ensure_schema(pool).await?;
     let json = sqlx::query_scalar::<_, String>("SELECT report_json FROM index_runs WHERE id=?")
         .bind(run)
         .fetch_one(pool)
@@ -414,6 +479,7 @@ pub async fn index_filesystem_with_report<F: Filesystem>(
         indexed_paths: 0,
         walk: WalkReport::default(),
         phase_issues: 0,
+        recovery_issues: 0,
     };
     {
         let mut connection = pool.acquire().await?;
@@ -627,6 +693,7 @@ async fn ingest(
     // These are derived results tied to the replaced inventory; user annotations
     // live outside these tables and matching file identities keep their IDs.
     for table in [
+        "recovery_jobs",
         "artifact_attachment_refs",
         "timeline_events",
         "artifact_objects",

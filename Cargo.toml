@@ -1,6 +1,6 @@
 [package]
 name = "exhume_indexer"
-version = "0.4.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.92"
 description = "Filesystem indexing and artefact extraction for Exhume."
@@ -10,13 +10,17 @@ readme = "README.md"
 authors = ["k1nd0ne"]
 license = "GPL-3.0-only"
 keywords = ["forensics", "dfir", "indexer", "sqlite", "exhume"]
-include = ["Cargo.toml", "LICENSE", "README.md", "artifacts.yaml", "src/**/*.rs"]
+include = ["Cargo.toml", "LICENSE", "README.md", "artifacts.yaml", "src/**/*.rs", "src/recovery/fixtures/*", "tests/**/*.rs", "tools/*"]
+
+[features]
+sqlcipher = ["exhume_artefacts/sqlcipher"]
+sqlcipher-vendored-openssl = ["sqlcipher", "exhume_artefacts/sqlcipher-vendored-openssl"]
 
 [dependencies]
 log = "0.4"
 exhume_body = "=0.7.0"
 exhume_filesystem = "=0.7.0"
-exhume_artefacts = "=0.5.0"
+exhume_artefacts = "=0.6.0"
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "json"] }
@@ -33,5 +37,9 @@ anyhow = "1"
 clap = { version = "4.5", features = ["cargo"] }
 clap-num = "1.1.1"
 tempfile = "3"
+rpassword = "7"
+sha2 = "0.10"
+zeroize = "1"
+plist = "1.7"
 
 signal-hook = "0.3"

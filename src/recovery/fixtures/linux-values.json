@@ -1,0 +1,15 @@
+{
+  "database_key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+  "password": "SYNTHETIC-GNOME-PASSWORD\n",
+  "safe_storage": "SYNTHETIC+Safe/Storage==\n",
+  "v10_config": {
+    "encryptedKey": "763130f9fa88db3e918c7153bf9041dfa06fc6277b3735cd746da0c455659a2f9ad6531ca84cb7903ae2c272dab04d9105838903e3aa9701b20b5d4331cf21910ce4a8927a2c6adb15a7ee1c4b2fb8c006fc8e"
+  },
+  "v11_config": {
+    "encryptedKey": "7631314e5fab384819a47b800a6a54c5275865434a0e8dd6631b23306d3da2398ba20745139616286957f563fbca6808998266bb49a2c260fddb6863ee6c5b661e35451d8be927f8d071bc26b170c5f08daa5a",
+    "safeStorageBackend": "gnome_libsecret"
+  },
+  "legacy_config": {
+    "key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+  }
+}

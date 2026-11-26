@@ -10,7 +10,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 pub mod artifacts;
+pub mod assets;
 pub mod identification;
+/// Application recovery, scoped pending inputs and targeted retries.
+pub mod recovery;
 pub mod report;
 pub use report::{
     index_filesystem_with_report, latest_inventory_report, load_index_report, IndexReport,
@@ -197,6 +200,10 @@ pub async fn ensure_evidence_row(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep partition geometry, scope and operation controls explicit in this public API."
+)]
 pub async fn insert_partition(
     pool: &SqlitePool,
     evidence_id: i64,
@@ -391,31 +398,8 @@ pub async fn populate_filesystem_timeline(
     Ok(())
 }
 
-/// Compatibility entry point that reports failures through progress events.
-/// Use [`try_index_filesystem`] when the caller needs a returned error.
-pub async fn index_filesystem<T: Filesystem>(
-    fs: &mut T,
-    evidence_id: i64,
-    partition_id: i64,
-    pool: &SqlitePool,
-    tx_progress: Option<Sender<IndexerEvent>>,
-    cancel_token: Option<Arc<AtomicBool>>,
-    path_prefix: Option<&str>,
-) {
-    let _ = try_index_filesystem(
-        fs,
-        evidence_id,
-        partition_id,
-        pool,
-        tx_progress,
-        cancel_token,
-        path_prefix,
-    )
-    .await;
-}
-
 /// Index atomically, returning discovery, database, and cancellation failures.
-pub async fn try_index_filesystem<T: Filesystem>(
+pub async fn index_filesystem<T: Filesystem>(
     fs: &mut T,
     evidence_id: i64,
     partition_id: i64,
@@ -436,17 +420,13 @@ pub async fn try_index_filesystem<T: Filesystem>(
         path_prefix,
     )
     .await?;
-    match report.status {
-        IndexStatus::Cancelled => Err(std::io::Error::new(
-            std::io::ErrorKind::Interrupted,
-            "filesystem indexing cancelled",
-        )
-        .into()),
-        IndexStatus::Aborted | IndexStatus::Failed => Err(report.summary().into()),
-        _ => Ok(()),
-    }
+    report_result(&report)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep partition geometry, scope and operation controls explicit in this public API."
+)]
 pub async fn index_partition(
     evidence_id: i64,
     partition_id: i64,
@@ -471,6 +451,10 @@ pub async fn index_partition(
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep partition geometry, scope and operation controls explicit in this public API."
+)]
 pub async fn index_partition_with_format(
     evidence_id: i64,
     partition_id: i64,
@@ -554,7 +538,7 @@ pub async fn index_partition_with_options_report(
     tx_progress: Option<Sender<IndexerEvent>>,
     cancel_token: Option<Arc<AtomicBool>>,
 ) -> Result<IndexReport, Box<dyn std::error::Error>> {
-    let mut body = Body::open(disk_image_path, body_format, options)?;
+    let body = Body::open(disk_image_path, body_format, options)?;
     let sector_size = body.get_sector_size() as u64;
     let partition_size_bytes = size_sectors * sector_size;
 
@@ -570,12 +554,7 @@ pub async fn index_partition_with_options_report(
             bitlocker_fvek: Some(fvek),
         });
 
-    let mut fs = detect_filesystem(
-        &mut body,
-        first_byte_addr,
-        partition_size_bytes,
-        key_material,
-    )?;
+    let mut fs = detect_filesystem(&body, first_byte_addr, partition_size_bytes, key_material)?;
 
     index_filesystem_with_report(
         &mut fs,
@@ -589,28 +568,8 @@ pub async fn index_partition_with_options_report(
     .await
 }
 
+/// Index a folder, returning discovery, database and cancellation failures.
 pub async fn index_folder(
-    evidence_id: i64,
-    partition_id: i64,
-    folder_path: String,
-    pool: &SqlitePool,
-    tx_progress: Option<Sender<IndexerEvent>>,
-    cancel_token: Option<Arc<AtomicBool>>,
-) {
-    let _ = try_index_folder(
-        evidence_id,
-        partition_id,
-        folder_path,
-        pool,
-        tx_progress,
-        cancel_token,
-    )
-    .await;
-}
-
-/// Folder indexing with returned failures; [`index_folder`] retains its
-/// progress-event-only API for existing callers.
-pub async fn try_index_folder(
     evidence_id: i64,
     partition_id: i64,
     folder_path: String,
@@ -901,6 +860,8 @@ pub async fn ensure_tables(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await?;
 
     report::ensure_schema(pool).await?;
+    recovery::ensure_schema(pool).await?;
+    assets::ensure_schema(pool).await?;
     Ok(())
 }
 

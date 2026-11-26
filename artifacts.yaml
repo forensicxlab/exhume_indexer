@@ -1,4 +1,60 @@
 artifacts:
+  - name: "Windows DPAPI User Master Keys"
+    description: "DPAPI master-key metadata; Signal recovery uses the matching account SID and master-key GUID"
+    paths:
+      - path: '(?i)^(?:[/\\][^/\\]+)*[/\\]Users[/\\][^/\\]+[/\\]AppData[/\\]Roaming[/\\]Microsoft[/\\]Protect[/\\]S-[0-9]+(?:-[0-9]+)+[/\\][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        regexp: true
+    parser: "windows_dpapi_masterkey"
+    tag: "DPAPI"
+    category: "users"
+
+  - name: "Linux GNOME Keyring Collections"
+    description: "GNOME binary Keyring metadata; decrypted secrets are handled only by scoped recovery sessions"
+    paths:
+      - path: '^(?:/[^/]+)*/(?:home/[^/]+|root)/(?:[.]local/share|[.]gnome2)/keyrings/[^/]+[.]keyring$'
+        regexp: true
+    parser: "linux_gnome_keyring"
+    tag: "Keyring"
+    category: "users"
+
+  - name: "Linux KDE Wallets"
+    description: "KWallet metadata with the matching same-stem salt companion"
+    paths:
+      - path: '^(?:/[^/]+)*/(?:home/[^/]+|root)/[.]local/share/kwalletd/[^/]+[.]kwl$'
+        regexp: true
+    parser: "linux_kwallet"
+    tag: "KWallet"
+    category: "users"
+
+  - name: "Windows Signal Desktop Database"
+    description: "Signal Desktop messages and attachment references; profile keys are resolved separately"
+    paths:
+      - path: '(?i)^(?:[/\\][^/\\]+)*[/\\]Users[/\\][^/\\]+[/\\]AppData[/\\]Roaming[/\\]Signal[/\\]sql[/\\]db[.]sqlite$'
+        regexp: true
+    parser: "desktop_signal"
+    tag: "Signal"
+    category: "application"
+
+  - name: "macOS Signal Desktop Database"
+    description: "Signal Desktop messages and attachment references with offline Keychain recovery"
+    paths:
+      - path: '^(?:/[^/]+)*/Users/[^/]+/Library/Application Support/Signal/sql/db[.]sqlite$'
+        regexp: true
+    parser: "desktop_signal"
+    tag: "Signal"
+    category: "application"
+
+  - name: "Linux Signal Desktop Database"
+    description: "Signal Desktop messages, cached previews and timer events with offline GNOME Keyring or KWallet recovery"
+    paths:
+      - path: '^(?:/[^/]+)*/(?:home/[^/]+|root)/[.]config/Signal(?: Beta)?(?: AppImage)?/sql/db[.]sqlite$'
+        regexp: true
+      - path: '^(?:/[^/]+)*/(?:home/[^/]+|root)/[.]var/app/org[.]signal[.]Signal/config/Signal(?: Beta)?(?: AppImage)?/sql/db[.]sqlite$'
+        regexp: true
+    parser: "desktop_signal"
+    tag: "Signal"
+    category: "application"
+
   - name: "System Logs – Syslog/Kern/Daemon"
     description: "Core syslog-based log files capturing kernel, daemon and general system messages (Debian/Ubuntu & RHEL/Fedora paths)"
     paths:
