@@ -2381,6 +2381,22 @@ pub async fn extract_artefacts_with_recovery<F: Filesystem + Send>(
 where
     F::FileType: FileCommon + Send,
 {
+    // Publish recoverable application records and credential requests before
+    // long ordinary parser passes. The inventory is already stable here.
+    let report = crate::recovery::process_recovery_jobs(
+        crate::recovery::RecoveryScope {
+            evidence_id,
+            partition_id,
+        },
+        pool,
+        fs,
+        registry,
+        session,
+        None,
+        progress.clone(),
+        cancel.clone(),
+    )
+    .await?;
     extract_standard_artefacts(
         evidence_id,
         partition_id,
@@ -2391,20 +2407,7 @@ where
         cancel.clone(),
     )
     .await?;
-    crate::recovery::process_recovery_jobs(
-        crate::recovery::RecoveryScope {
-            evidence_id,
-            partition_id,
-        },
-        pool,
-        fs,
-        registry,
-        session,
-        None,
-        progress,
-        cancel,
-    )
-    .await
+    Ok(report)
 }
 
 async fn extract_standard_artefacts<F: Filesystem>(

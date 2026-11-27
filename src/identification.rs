@@ -1,4 +1,4 @@
-use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon};
+use exhume_filesystem::filesystem::{DirectoryCommon, FileCommon, FileKind};
 use exhume_filesystem::Filesystem;
 use file_type::FileType;
 use sqlx::{Pool, Row, Sqlite};
@@ -18,6 +18,21 @@ pub async fn identify_file_types<T: Filesystem>(
 ) where
     T::DirectoryType: DirectoryCommon,
 {
+    identify_file_types_with_cancellation(fs, evidence_id, partition_id, pool, tx_progress, None)
+        .await;
+}
+
+/// Identify regular-file content while allowing a caller to stop at record boundaries.
+pub async fn identify_file_types_with_cancellation<T: Filesystem>(
+    fs: &mut T,
+    evidence_id: i64,
+    partition_id: i64,
+    pool: &Pool<Sqlite>,
+    tx_progress: Option<Sender<IndexerEvent>>,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) where
+    T::DirectoryType: DirectoryCommon,
+{
     info!("Starting file-signature identification…");
 
     //--------------------------------------------------------------
@@ -30,7 +45,7 @@ pub async fn identify_file_types<T: Filesystem>(
         WHERE  evidence_id  = ?
           AND  partition_id = ?
           AND  size        > 0
-          AND  ftype       != 'Directory'
+          AND  lower(ftype) NOT IN ('directory', 'dir', 'symlink', 'symbolic link', 'special')
         "#,
     )
     .bind(evidence_id)
@@ -116,6 +131,12 @@ pub async fn identify_file_types<T: Filesystem>(
     let mut processed = 0u64;
 
     for row in rows {
+        if cancel
+            .as_ref()
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            return;
+        }
         let record_id = row.get::<i64, _>("identifier") as u64;
         let path = row.get::<String, _>("absolute_path");
 
@@ -137,20 +158,45 @@ pub async fn identify_file_types<T: Filesystem>(
             },
         };
 
-        if record.is_dir() {
+        if record.entry_kind() != FileKind::Regular {
             continue;
         }
 
         // Efficient prefix read
-        let prefix = match fs
-            .read_file_prefix(&record, SAMPLE_LEN)
-            .map_err(|error| error.to_string())
-        {
-            Ok(v) => v,
-            Err(e) => {
-                let message = format!("read_file_prefix error id={record_id}: {e}");
+        let prefix_result = fs.read_file_prefix(&record, SAMPLE_LEN).map_err(|error| {
+            let unsupported = error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::Unsupported)
+                || matches!(
+                    error.downcast_ref::<exhume_filesystem::decmpfs::DecmpfsError>(),
+                    Some(exhume_filesystem::decmpfs::DecmpfsError::UnsupportedCompressionType(_))
+                );
+            (error.to_string(), unsupported)
+        });
+        let prefix = match prefix_result {
+            Ok(bytes) => bytes,
+            Err((detail, unsupported)) => {
+                let message = format!("read_file_prefix error id={record_id}: {detail}");
                 error!("{message}");
-                signature_issue(&tx_progress, evidence_id, record_id, &path, message, false).await;
+                send_progress(
+                    &tx_progress,
+                    IndexerEvent {
+                        evidence_id,
+                        event_type: IndexerEventType::Issue {
+                            phase: crate::report::IndexPhase::FileSignature,
+                            code: if unsupported {
+                                crate::report::IndexIssueCode::UnsupportedContent
+                            } else {
+                                crate::report::IndexIssueCode::FileRead
+                            },
+                            path: Some(path.clone()),
+                            record_id: Some(record_id),
+                            fatal: false,
+                        },
+                        message,
+                    },
+                )
+                .await;
                 continue;
             }
         };

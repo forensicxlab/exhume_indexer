@@ -33,6 +33,7 @@ impl IndexPhase {
 #[serde(rename_all = "snake_case")]
 pub enum IndexIssueCode {
     FileRead,
+    UnsupportedContent,
     ParserFailed,
     ParserPartial,
     UnknownParser,
@@ -131,20 +132,37 @@ where
     F: FnOnce(Sender<IndexerEvent>) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
+    // A later phase (especially a credential retry) cannot establish that a
+    // previously interrupted/failed phase completed. A fresh inventory resets
+    // this assessment; retain its cause while allowing useful recovery work.
+    let retained_status = matches!(
+        report.status,
+        IndexStatus::Cancelled | IndexStatus::Failed | IndexStatus::Aborted
+    )
+    .then_some(report.status);
+    let retained_error = if retained_status.is_some() {
+        sqlx::query_scalar::<_, Option<String>>("SELECT error FROM index_runs WHERE id=?")
+            .bind(report.run_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten()
+    } else {
+        None
+    };
     if cancel
         .as_ref()
         .is_some_and(|token| token.load(std::sync::atomic::Ordering::Relaxed))
     {
-        report.status = IndexStatus::Cancelled;
+        report.status = retained_status.unwrap_or(IndexStatus::Cancelled);
         let mut connection = pool.acquire().await?;
-        save_report(&mut connection, report, None).await?;
+        save_report(&mut connection, report, retained_error.as_deref()).await?;
         return Ok(());
     }
     let mut running = report.clone();
     running.status = IndexStatus::Running;
     {
         let mut connection = pool.acquire().await?;
-        save_report(&mut connection, &running, None).await?;
+        save_report(&mut connection, &running, retained_error.as_deref()).await?;
     }
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<IndexerEvent>(128);
     let file = tempfile::tempfile()?;
@@ -225,6 +243,8 @@ where
     .await?;
     report.status = if fatal {
         IndexStatus::Failed
+    } else if let Some(status) = retained_status {
+        status
     } else if cancel
         .as_ref()
         .is_some_and(|token| token.load(std::sync::atomic::Ordering::Relaxed))
@@ -263,7 +283,7 @@ where
         if fatal {
             Some("analysis phase failed; see index_issues")
         } else {
-            None
+            retained_error.as_deref()
         },
     )
     .await?;
@@ -310,7 +330,7 @@ pub struct IndexReport {
     pub indexed_paths: u64,
     pub walk: WalkReport,
     pub phase_issues: u64,
-    /// Current unresolved Signal jobs and diagnostics on published attempts.
+    /// Current unresolved recovery jobs and diagnostics on published attempts.
     /// Historical failed credential attempts do not keep a resolved job incomplete.
     #[serde(default)]
     pub recovery_issues: u64,

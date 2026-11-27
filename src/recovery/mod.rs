@@ -159,11 +159,30 @@ where
     );
     ensure_schema(pool).await?;
     let inventory = persistence::inventory(pool, scope).await?;
+    let parser_ids = sqlx::query_scalar::<_, String>("SELECT DISTINCT parser FROM artifacts WHERE evidence_id=? AND partition_id=? AND parser IS NOT NULL ORDER BY parser")
+        .bind(scope.evidence_id).bind(scope.partition_id).fetch_all(pool).await?
+        .into_iter().filter(|parser| preparation.supports_parser(parser)).collect::<Vec<_>>();
     let mut jobs = Vec::new();
     let mut offset = 0i64;
     loop {
-        let rows=sqlx::query("SELECT MIN(a.id) AS artifact_id,a.parser,sf.id,sf.identifier,sf.absolute_path,sf.size FROM artifacts a JOIN system_files sf ON sf.id=a.file_id AND sf.evidence_id=a.evidence_id AND sf.partition_id=a.partition_id WHERE a.evidence_id=? AND a.partition_id=? AND a.parser IS NOT NULL GROUP BY sf.id,a.parser ORDER BY MIN(a.id) LIMIT 256 OFFSET ?")
-            .bind(scope.evidence_id).bind(scope.partition_id).bind(offset).fetch_all(pool).await?;
+        if parser_ids.is_empty() {
+            break;
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT MIN(a.id) AS artifact_id,a.parser,sf.id,sf.identifier,sf.absolute_path,sf.size FROM artifacts a JOIN system_files sf ON sf.id=a.file_id AND sf.evidence_id=a.evidence_id AND sf.partition_id=a.partition_id WHERE a.evidence_id=");
+        query
+            .push_bind(scope.evidence_id)
+            .push(" AND a.partition_id=")
+            .push_bind(scope.partition_id)
+            .push(" AND a.parser IN (");
+        let mut names = query.separated(",");
+        for parser in &parser_ids {
+            names.push_bind(parser);
+        }
+        names.push_unseparated(")");
+        query
+            .push(" GROUP BY sf.id,a.parser ORDER BY MIN(a.id) LIMIT 256 OFFSET ")
+            .push_bind(offset);
+        let rows = query.build().fetch_all(pool).await?;
         if rows.is_empty() {
             break;
         }

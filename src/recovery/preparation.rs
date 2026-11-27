@@ -26,6 +26,13 @@ where
     F: Filesystem + Send,
     F::FileType: FileCommon + Send,
 {
+    /// Coarse discovery filter applied in SQL before source records are decoded.
+    /// The permissive default preserves custom preparations that select by path
+    /// in `describe`; override it to avoid scanning unrelated parser candidates.
+    fn supports_parser(&self, _parser: &str) -> bool {
+        true
+    }
+
     /// `None` leaves the parser on the ordinary extraction path.
     fn describe(&self, parser: &str, primary: &RecoverySource) -> Option<TargetDescription>;
     fn prepare<'a>(

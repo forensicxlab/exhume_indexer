@@ -20,6 +20,9 @@ where
     F: Filesystem + Send,
     F::FileType: FileCommon + Send,
 {
+    fn supports_parser(&self, parser: &str) -> bool {
+        manages_parser(parser)
+    }
     fn describe(&self, parser: &str, source: &RecoverySource) -> Option<TargetDescription> {
         match application(parser)? {
             Application::Signal => {

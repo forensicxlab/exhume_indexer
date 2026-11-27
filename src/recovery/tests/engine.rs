@@ -347,3 +347,48 @@ async fn reported_cooperative_cancellation_waits_for_the_operation_boundary() ->
     assert_eq!(report.status, crate::IndexStatus::Cancelled);
     Ok(())
 }
+
+struct FilteredExamples(Examples);
+impl RecoveryPreparation<FolderFS> for FilteredExamples {
+    fn supports_parser(&self, parser: &str) -> bool {
+        parser == "example_a"
+    }
+    fn describe(&self, parser: &str, source: &RecoverySource) -> Option<TargetDescription> {
+        assert_eq!(
+            parser, "example_a",
+            "SQL discovery must exclude unrelated candidates"
+        );
+        self.0.describe(parser, source)
+    }
+    async fn prepare(&self, context: PreparationContext<'_, FolderFS>) -> Result<PreparedParser> {
+        self.0.prepare(context).await
+    }
+}
+#[tokio::test]
+async fn preparation_filter_excludes_unrelated_sources_before_decoding_them() -> Result<()> {
+    let (_root, pool, scope, mut fs, registry) = setup().await?;
+    // Invalid unrelated source metadata must not prevent managed app recovery.
+    sqlx::query("UPDATE system_files SET identifier=-1 WHERE name='application.store'")
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO artifacts(evidence_id,partition_id,file_id,name,description,parser,tag,category) SELECT evidence_id,partition_id,id,'ordinary','','ordinary','test','test' FROM system_files WHERE name='application.store'")
+        .execute(&pool).await?;
+    let report = process_recovery_jobs_with(
+        &FilteredExamples(Examples { two_stores: false }),
+        scope,
+        &pool,
+        &mut fs,
+        &registry,
+        &mut RecoverySession::default(),
+        None,
+        None,
+        None,
+    )
+    .await?;
+    assert_eq!(report.jobs.len(), 2);
+    assert!(report
+        .jobs
+        .iter()
+        .all(|job| job.parser == "example_a" && job.status == RecoveryStatus::NeedsInput));
+    Ok(())
+}
